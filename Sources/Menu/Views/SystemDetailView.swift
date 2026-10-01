@@ -197,12 +197,59 @@ enum AppColors {
     }
 }
 
+/// Chart colors and fill opacities from Beszel (MIT License, Copyright (c) henrygd),
+/// `internal/site/src/index.css` and the chart definitions under `components/routes/system/charts`.
 enum ChartPalette {
-    static let cpu = Color(red: 55 / 255, green: 97 / 255, blue: 210 / 255)
-    static let memory = Color(red: 75 / 255, green: 180 / 255, blue: 140 / 255)
-    static let disk = Color(red: 164 / 255, green: 92 / 255, blue: 212 / 255)
-    static let sent = Color(red: 208 / 255, green: 70 / 255, blue: 112 / 255)
-    static let received = Color(red: 92 / 255, green: 181 / 255, blue: 141 / 255)
+    static let chart1 = hsl(220, 70, 50)
+    static let chart2 = hsl(160, 60, 45)
+    static let chart3 = hsl(30, 80, 55)
+    static let chart4 = hsl(280, 65, 60)
+    static let chart5 = hsl(340, 75, 55)
+    static let loadAverage = [hsl(271, 81, 60), hsl(217, 91, 60), hsl(25, 95, 53)]
+
+    static let cpu = chart1
+    static let memory = chart2
+    static let disk = chart4
+    static let diskRead = chart1
+    static let diskWrite = chart3
+    static let sent = chart5
+    static let received = chart2
+
+    static let usageFill = 0.4
+    static let ioFill = 0.3
+    static let networkFill = 0.2
+    static let cacheStrength = 0.5
+
+    static func series(_ index: Int, of count: Int) -> Color {
+        let hue = Double(index) * 360 / Double(max(1, count))
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return nsColor(hue, isDark ? 60 : 65, isDark ? 55 : 50)
+        })
+    }
+
+    static func hsl(_ hue: Double, _ saturation: Double, _ lightness: Double) -> Color {
+        Color(nsColor: nsColor(hue, saturation, lightness))
+    }
+
+    private static func nsColor(_ hue: Double, _ saturation: Double, _ lightness: Double) -> NSColor {
+        let s = saturation / 100
+        let l = lightness / 100
+        let chroma = (1 - abs(2 * l - 1)) * s
+        let h = hue.truncatingRemainder(dividingBy: 360) / 60
+        let x = chroma * (1 - abs(h.truncatingRemainder(dividingBy: 2) - 1))
+        let (r, g, b): (Double, Double, Double)
+        switch h {
+        case ..<1: (r, g, b) = (chroma, x, 0)
+        case ..<2: (r, g, b) = (x, chroma, 0)
+        case ..<3: (r, g, b) = (0, chroma, x)
+        case ..<4: (r, g, b) = (0, x, chroma)
+        case ..<5: (r, g, b) = (x, 0, chroma)
+        default: (r, g, b) = (chroma, 0, x)
+        }
+        let m = l - chroma / 2
+        return NSColor(srgbRed: r + m, green: g + m, blue: b + m, alpha: 1)
+    }
 }
 
 enum UnitFormat {
@@ -412,14 +459,14 @@ struct MetricChart: View {
             Chart(samples) { sample in
                 AreaMark(x: .value("Time", sample.date), y: .value(label, sample.value), series: .value("Layer", "base"))
                     .interpolationMethod(.monotone)
-                    .foregroundStyle(color.opacity(0.4))
+                    .foregroundStyle(color.opacity(ChartPalette.usageFill))
                 if let stacked = sample.stacked {
                     AreaMark(x: .value("Time", sample.date), y: .value(label, stacked), series: .value("Layer", "stacked"))
                         .interpolationMethod(.monotone)
-                        .foregroundStyle(color.opacity(0.2))
+                        .foregroundStyle(color.opacity(ChartPalette.cacheStrength * ChartPalette.usageFill))
                     LineMark(x: .value("Time", sample.date), y: .value(label, sample.value + stacked), series: .value("Layer", "top"))
                         .interpolationMethod(.monotone)
-                        .foregroundStyle(color.opacity(0.5))
+                        .foregroundStyle(color.opacity(ChartPalette.cacheStrength))
                         .lineStyle(StrokeStyle(lineWidth: 1))
                 }
                 LineMark(x: .value("Time", sample.date), y: .value(label, sample.value), series: .value("Layer", "line"))
@@ -433,7 +480,7 @@ struct MetricChart: View {
                     if let stacked = sample.stacked {
                         return [
                             ReadoutItem(color: color, name: "Used", value: preciseFormat(sample.value), markerY: sample.value),
-                            ReadoutItem(color: color.opacity(0.4), name: "Cache", value: preciseFormat(stacked), markerY: sample.value + stacked)
+                            ReadoutItem(color: color.opacity(ChartPalette.cacheStrength), name: "Cache", value: preciseFormat(stacked), markerY: sample.value + stacked)
                         ]
                     }
                     return [ReadoutItem(color: color, name: label, value: preciseFormat(sample.value), markerY: sample.value)]
@@ -482,10 +529,10 @@ struct NetworkChart: View {
             Chart(samples) { sample in
                 AreaMark(x: .value("Time", sample.date), y: .value("Sent", sample.sent), series: .value("Direction", "sent"), stacking: .unstacked)
                     .interpolationMethod(.monotone)
-                    .foregroundStyle(ChartPalette.sent.opacity(0.25))
+                    .foregroundStyle(ChartPalette.sent.opacity(ChartPalette.networkFill))
                 AreaMark(x: .value("Time", sample.date), y: .value("Received", sample.received), series: .value("Direction", "received"), stacking: .unstacked)
                     .interpolationMethod(.monotone)
-                    .foregroundStyle(ChartPalette.received.opacity(0.25))
+                    .foregroundStyle(ChartPalette.received.opacity(ChartPalette.networkFill))
                 LineMark(x: .value("Time", sample.date), y: .value("Sent", sample.sent), series: .value("Direction", "sentLine"))
                     .interpolationMethod(.monotone)
                     .foregroundStyle(ChartPalette.sent)
