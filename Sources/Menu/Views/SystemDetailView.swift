@@ -114,7 +114,7 @@ struct SystemDetailView: View {
                     point.memUsed.map { ChartSample(date: point.date, value: $0, stacked: point.memCache) }
                 },
                 yMax: latest?.memTotal,
-                format: StorageFormat.axis(total: latest?.memTotal)
+                format: StorageFormat.axis
             )
         case ChartCatalog.disk:
             MetricChart(
@@ -126,7 +126,7 @@ struct SystemDetailView: View {
                     point.diskUsed.map { ChartSample(date: point.date, value: $0, stacked: nil) }
                 },
                 yMax: latest?.diskTotal,
-                format: StorageFormat.axis(total: latest?.diskTotal)
+                format: StorageFormat.axis
             )
         case ChartCatalog.network:
             NetworkChart(
@@ -145,7 +145,7 @@ struct SystemDetailView: View {
                     point.extraDisks[chartID].map { ChartSample(date: point.date, value: $0.used, stacked: nil) }
                 },
                 yMax: disk?.total,
-                format: StorageFormat.axis(total: disk?.total)
+                format: StorageFormat.axis
             )
         }
     }
@@ -196,14 +196,32 @@ enum ChartPalette {
     static let received = Color(red: 92 / 255, green: 181 / 255, blue: 141 / 255)
 }
 
+enum UnitFormat {
+    private static let step = 1024.0
+    private static let nextUnitAt = 999.5
+    private static let decimalsBelow = 9.95
+
+    static func compact(_ value: Double, units: [String]) -> String {
+        var value = value
+        var unit = 0
+        while value >= nextUnitAt, unit < units.count - 1 {
+            value /= step
+            unit += 1
+        }
+        var number = String(format: value < decimalsBelow ? "%.1f" : "%.0f", value)
+        if number.hasSuffix(".0") {
+            number.removeLast(2)
+        }
+        return "\(number) \(units[unit])"
+    }
+}
+
 enum StorageFormat {
     private static let gigabytesPerTerabyte = 1024.0
+    private static let units = ["GB", "TB", "PB"]
 
-    static func axis(total: Double?) -> (Double) -> String {
-        if let total, total >= gigabytesPerTerabyte {
-            return { String(format: "%.0f TB", $0 / gigabytesPerTerabyte) }
-        }
-        return { String(format: "%.0f GB", $0) }
+    static func axis(_ gigabytes: Double) -> String {
+        UnitFormat.compact(gigabytes, units: units)
     }
 
     static func size(_ gigabytes: Double) -> String {
@@ -224,7 +242,7 @@ enum StorageFormat {
 enum ChartLayout {
     static let panelWidth: CGFloat = 310
     static let panelPadding: CGFloat = 8
-    static let yLabelWidth: CGFloat = 48
+    static let yLabelWidth: CGFloat = 40
     static let yLabelGap: CGFloat = 4
     static let plotWidth = panelWidth - 2 * panelPadding - yLabelWidth - yLabelGap
 }
@@ -410,14 +428,7 @@ struct NetworkChart: View {
     }
 
     static func rate(_ bytesPerSecond: Double) -> String {
-        let units = ["B/s", "KB/s", "MB/s", "GB/s"]
-        var value = bytesPerSecond
-        var unit = 0
-        while value >= 1024, unit < units.count - 1 {
-            value /= 1024
-            unit += 1
-        }
-        return unit == 0 ? String(format: "%.0f %@", value, units[unit]) : String(format: "%.1f %@", value, units[unit])
+        UnitFormat.compact(bytesPerSecond, units: ["B/s", "KB/s", "MB/s", "GB/s"])
     }
 }
 
