@@ -5,6 +5,7 @@ struct SystemDetailView: View {
     let system: SystemRecord
     var details: SystemDetailsRecord? = nil
     var charts: [String] = ChartCatalog.defaultSelection
+    var titles: [String: String] = [:]
 
     private var cpuModel: String? {
         details?.cpu ?? system.info?.m
@@ -68,33 +69,27 @@ struct SystemDetailView: View {
                     .font(.system(size: 10))
                 }
             }
+            .chartCard()
 
-            Divider()
-                .padding(.vertical, 2)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Label("Usage", systemImage: "chart.bar.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.primary)
-
-                let history = AppState.shared.history[system.id] ?? []
-                ForEach(ChartCatalog.shown(charts), id: \.self) { chartID in
-                    chart(chartID, history: history)
-                }
+            let history = AppState.shared.history[system.id] ?? []
+            let source = ChartSource(system: system, history: history, aliases: titles)
+            ForEach(charts, id: \.self) { chartID in
+                chart(chartID, history: history, title: source.title(for: chartID))
+                    .chartCard()
             }
         }
         .padding(.horizontal, ChartLayout.panelPadding)
-        .padding(.vertical, 6)
+        .padding(.vertical, ChartLayout.panelPadding)
         .frame(width: ChartLayout.panelWidth)
     }
 
     @ViewBuilder
-    private func chart(_ chartID: String, history: [StatPoint]) -> some View {
+    private func chart(_ chartID: String, history: [StatPoint], title: String) -> some View {
         let latest = history.last
         switch chartID {
         case ChartCatalog.cpu:
             MetricChart(
-                label: "CPU",
+                label: title,
                 percent: latest?.cpu ?? system.cpuPercentage,
                 detail: nil,
                 color: ChartPalette.cpu,
@@ -106,7 +101,7 @@ struct SystemDetailView: View {
             )
         case ChartCatalog.memory:
             MetricChart(
-                label: "Memory",
+                label: title,
                 percent: latest?.mem ?? system.memoryPercentage,
                 detail: usageDetail(used: latest?.memUsed, total: latest?.memTotal),
                 color: ChartPalette.memory,
@@ -118,7 +113,7 @@ struct SystemDetailView: View {
             )
         case ChartCatalog.disk:
             MetricChart(
-                label: "Disk",
+                label: title,
                 percent: latest?.disk ?? system.diskPercentage,
                 detail: usageDetail(used: latest?.diskUsed, total: latest?.diskTotal),
                 color: ChartPalette.disk,
@@ -130,14 +125,24 @@ struct SystemDetailView: View {
             )
         case ChartCatalog.network:
             NetworkChart(
+                title: title,
                 samples: history.map {
                     NetworkSample(date: $0.date, sent: $0.netSent ?? 0, received: $0.netRecv ?? 0)
+                }
+            )
+        case _ where ChartCatalog.isInterface(chartID):
+            let name = ChartCatalog.interfaceName(chartID)
+            NetworkChart(
+                title: title,
+                samples: history.map {
+                    let rate = $0.interfaces[name]
+                    return NetworkSample(date: $0.date, sent: rate?.sent ?? 0, received: rate?.received ?? 0)
                 }
             )
         default:
             let disk = latest?.extraDisks[chartID]
             MetricChart(
-                label: ChartCatalog.title(for: chartID, in: history),
+                label: title,
                 percent: disk.flatMap { $0.total > 0 ? $0.used / $0.total * 100 : nil },
                 detail: usageDetail(used: disk?.used, total: disk?.total),
                 color: ChartPalette.disk,
@@ -242,9 +247,34 @@ enum StorageFormat {
 enum ChartLayout {
     static let panelWidth: CGFloat = 310
     static let panelPadding: CGFloat = 8
-    static let yLabelWidth: CGFloat = 40
+    static let axisFontSize: CGFloat = 8
     static let yLabelGap: CGFloat = 4
-    static let plotWidth = panelWidth - 2 * panelPadding - yLabelWidth - yLabelGap
+    static let cardPadding: CGFloat = 10
+    static let cardCornerRadius: CGFloat = 10
+    static let chartHeight: CGFloat = 88
+    static let contentWidth = panelWidth - 2 * panelPadding - 2 * cardPadding
+
+    static func yLabelWidth(_ labels: [String]) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: axisFontSize)
+        let widest = labels.map { NSAttributedString(string: $0, attributes: [.font: font]).size().width }.max() ?? 0
+        return widest.rounded(.up)
+    }
+}
+
+extension View {
+    func chartCard() -> some View {
+        self
+            .padding(ChartLayout.cardPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: ChartLayout.cardCornerRadius, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: ChartLayout.cardCornerRadius, style: .continuous)
+                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+            )
+    }
 }
 
 struct ChartSample: Identifiable {
@@ -275,9 +305,8 @@ struct ChartTimeAxis {
         return ticks
     }
 
-    func labelShift(for date: Date) -> CGFloat {
+    func labelShift(for date: Date, plotWidth: CGFloat) -> CGFloat {
         let span = range.upperBound.timeIntervalSince(range.lowerBound)
-        let plotWidth = ChartLayout.plotWidth
         let halfLabel: CGFloat = 19
         let fromLeft = CGFloat(date.timeIntervalSince(range.lowerBound) / span) * plotWidth
         let fromRight = plotWidth - fromLeft
@@ -289,18 +318,21 @@ struct ChartTimeAxis {
 
 extension Chart {
     func metricAxes(time: ChartTimeAxis, axisMax: Double, format: @escaping (Double) -> String) -> some View {
-        self
+        let values = [0, axisMax / 2, axisMax]
+        let labelWidth = ChartLayout.yLabelWidth(values.map(format))
+        let plotWidth = ChartLayout.contentWidth - labelWidth - ChartLayout.yLabelGap
+        return self
             .chartXScale(domain: time.range)
             .chartYScale(domain: 0...axisMax)
             .chartYAxis {
-                AxisMarks(position: .leading, values: [0, axisMax / 2, axisMax]) { value in
+                AxisMarks(position: .leading, values: values) { value in
                     AxisGridLine().foregroundStyle(Color.secondary.opacity(0.2))
                     AxisValueLabel {
                         if let number = value.as(Double.self) {
                             Text(format(number))
-                                .font(.system(size: 8))
+                                .font(.system(size: ChartLayout.axisFontSize))
                                 .lineLimit(1)
-                                .frame(width: ChartLayout.yLabelWidth, alignment: .trailing)
+                                .frame(width: labelWidth, alignment: .trailing)
                         }
                     }
                 }
@@ -313,12 +345,12 @@ extension Chart {
                             Text(date, format: .dateTime.hour().minute())
                                 .font(.system(size: 8))
                                 .fixedSize()
-                                .offset(x: time.labelShift(for: date), y: -2)
+                                .offset(x: time.labelShift(for: date, plotWidth: plotWidth), y: -2)
                         }
                     }
                 }
             }
-            .frame(height: 72)
+            .frame(height: ChartLayout.chartHeight)
     }
 }
 
@@ -341,8 +373,9 @@ struct MetricChart: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(label)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
                 Text(percent.map { "\(Int($0))%" } ?? "\u{2013}")
                     .font(.system(size: 12, weight: .semibold).monospacedDigit())
                     .foregroundColor(percent.map { $0 >= 70 ? AppColors.level($0) : .primary } ?? .secondary)
@@ -386,6 +419,7 @@ struct NetworkSample: Identifiable {
 }
 
 struct NetworkChart: View {
+    let title: String
     let samples: [NetworkSample]
 
     private var axisMax: Double {
@@ -395,17 +429,20 @@ struct NetworkChart: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("Network")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                    .foregroundColor(.primary)
+                Group {
+                    Text("\u{2191} \(Self.rate(samples.last?.sent ?? 0))")
+                        .foregroundColor(ChartPalette.sent)
+                    Text("\u{2193} \(Self.rate(samples.last?.received ?? 0))")
+                        .foregroundColor(ChartPalette.received)
+                }
+                .font(.system(size: 12, weight: .semibold).monospacedDigit())
                 Spacer()
-                Text("\u{2191} \(Self.rate(samples.last?.sent ?? 0))")
-                    .foregroundColor(ChartPalette.sent)
-                Text("\u{2193} \(Self.rate(samples.last?.received ?? 0))")
-                    .foregroundColor(ChartPalette.received)
             }
-            .font(.system(size: 10, weight: .semibold).monospacedDigit())
 
             Chart(samples) { sample in
                 AreaMark(x: .value("Time", sample.date), y: .value("Sent", sample.sent), series: .value("Direction", "sent"), stacking: .unstacked)

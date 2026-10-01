@@ -227,11 +227,13 @@ struct SystemsView: View {
                             .padding(.horizontal, 20)
                             .padding(.bottom, 8)
                         ChartChecklist(
-                            options: ChartCatalog.builtIns,
+                            options: ChartSource(system: nil, history: []).options,
                             selected: Binding(
                                 get: { appState.defaultCharts },
                                 set: { appState.defaultCharts = $0 }
-                            )
+                            ),
+                            isEditable: true,
+                            rename: nil
                         )
                     }
                 }
@@ -250,11 +252,16 @@ struct SystemChartsView: View {
     }
 
     private var options: [ChartOption] {
-        let available = ChartCatalog.options(in: appState.history[system.id] ?? [])
+        let source = ChartSource(
+            system: system,
+            history: appState.history[system.id] ?? [],
+            aliases: appState.chartTitles[system.id] ?? [:]
+        )
+        let available = source.options
         let known = Set(available.map(\.id))
         let missing = appState.charts(for: system.id)
             .filter { !known.contains($0) }
-            .map(ChartCatalog.missingOption)
+            .map(source.option(for:))
         return available + missing
     }
 
@@ -282,9 +289,12 @@ struct SystemChartsView: View {
                 selected: Binding(
                     get: { appState.charts(for: system.id) },
                     set: { appState.systemCharts[system.id] = $0 }
-                )
+                ),
+                isEditable: !usesDefault,
+                rename: { chartID, title in
+                    appState.setTitle(title, chartID: chartID, systemID: system.id)
+                }
             )
-            .disabled(usesDefault)
         }
     }
 }
@@ -292,6 +302,8 @@ struct SystemChartsView: View {
 struct ChartChecklist: View {
     let options: [ChartOption]
     @Binding var selected: [String]
+    let isEditable: Bool
+    let rename: ((String, String) -> Void)?
     @State private var search = ""
 
     private var shownOptions: [ChartOption] {
@@ -302,10 +314,6 @@ struct ChartChecklist: View {
         options.filter { !selected.contains($0.id) }.filter(matches)
     }
 
-    private var atLimit: Bool {
-        selected.count >= ChartCatalog.maxCharts
-    }
-
     private func matches(_ option: ChartOption) -> Bool {
         search.isEmpty
             || option.title.localizedCaseInsensitiveContains(search)
@@ -314,7 +322,7 @@ struct ChartChecklist: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if options.count > ChartCatalog.maxCharts {
+            if options.count > ChartCatalog.searchThreshold {
                 TextField("Search charts", text: $search)
                     .textFieldStyle(.roundedBorder)
                     .padding(.horizontal, 20)
@@ -324,29 +332,40 @@ struct ChartChecklist: View {
             List {
                 Section("Shown") {
                     ForEach(shownOptions) { option in
-                        ChartOptionRow(option: option, isOn: true, isReorderable: search.isEmpty) {
+                        ChartOptionRow(
+                            option: option,
+                            isOn: true,
+                            isEditable: isEditable,
+                            isReorderable: isEditable && search.isEmpty,
+                            rename: rename
+                        ) {
                             selected.removeAll { $0 == option.id }
                         }
                     }
                     .onMove { source, destination in
                         selected.move(fromOffsets: source, toOffset: destination)
                     }
-                    .moveDisabled(!search.isEmpty)
+                    .moveDisabled(!isEditable || !search.isEmpty)
                 }
                 if !availableOptions.isEmpty {
                     Section("Available") {
                         ForEach(availableOptions) { option in
-                            ChartOptionRow(option: option, isOn: false, isReorderable: false) {
+                            ChartOptionRow(
+                                option: option,
+                                isOn: false,
+                                isEditable: isEditable,
+                                isReorderable: false,
+                                rename: rename
+                            ) {
                                 selected.append(option.id)
                             }
-                            .disabled(atLimit)
                         }
                     }
                 }
             }
             .listStyle(.inset)
 
-            Text("\(selected.count) of \(ChartCatalog.maxCharts) charts shown. Drag to reorder.")
+            Text("\(selected.count) \(selected.count == 1 ? "chart" : "charts") shown. Drag to reorder.")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 20)
@@ -358,26 +377,70 @@ struct ChartChecklist: View {
 struct ChartOptionRow: View {
     let option: ChartOption
     let isOn: Bool
+    let isEditable: Bool
     let isReorderable: Bool
+    let rename: ((String, String) -> Void)?
     let toggle: () -> Void
+
+    @State private var isRenaming = false
+    @State private var draft = ""
+    @FocusState private var fieldFocused: Bool
 
     var body: some View {
         HStack {
-            Toggle(isOn: Binding(get: { isOn }, set: { _ in toggle() })) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(option.title)
-                    Text(option.subtitle)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
+            Toggle(option.title, isOn: Binding(get: { isOn }, set: { _ in toggle() }))
             .toggleStyle(.checkbox)
+            .labelsHidden()
+            .disabled(!isEditable)
+
+            VStack(alignment: .leading, spacing: 1) {
+                if isRenaming {
+                    TextField(option.detectedTitle, text: $draft)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($fieldFocused)
+                        .onAppear { fieldFocused = true }
+                        .onSubmit(commit)
+                        .onExitCommand { isRenaming = false }
+                        .onChange(of: fieldFocused) { _, focused in
+                            if !focused { commit() }
+                        }
+                        .onDisappear(perform: commit)
+                } else {
+                    Text(option.title)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if isEditable { toggle() }
+                        }
+                }
+                Text(option.subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .opacity(isEditable || isRenaming ? 1 : 0.6)
+
             Spacer()
+
+            if rename != nil, !isRenaming {
+                Button {
+                    draft = option.title == option.detectedTitle ? "" : option.title
+                    isRenaming = true
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.borderless)
+                .help("Rename chart")
+            }
             if isReorderable {
                 Image(systemName: "line.3.horizontal")
                     .foregroundColor(.secondary)
             }
         }
+    }
+
+    private func commit() {
+        guard isRenaming else { return }
+        rename?(option.id, draft)
+        isRenaming = false
     }
 }
 

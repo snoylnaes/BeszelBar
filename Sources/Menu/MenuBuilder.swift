@@ -188,7 +188,7 @@ enum MenuBuilder {
         let details = appState.systemDetails[system.id]
 
         let detailItem = NSMenuItem()
-        let detailView = NSHostingView(rootView: SystemDetailView(system: system, details: details, charts: appState.charts(for: system.id)))
+        let detailView = NSHostingView(rootView: SystemDetailView(system: system, details: details, charts: appState.charts(for: system.id), titles: appState.chartTitles[system.id] ?? [:]))
         detailView.frame = NSRect(origin: .zero, size: detailView.fittingSize)
         detailItem.view = detailView
         submenu.addItem(detailItem)

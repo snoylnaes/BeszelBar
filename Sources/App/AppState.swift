@@ -25,6 +25,9 @@ final class AppState {
     var systemCharts: [String: [String]] = [:] {
         didSet { storage.saveSystemCharts(systemCharts) }
     }
+    var chartTitles: [String: [String: String]] = [:] {
+        didSet { storage.saveChartTitles(chartTitles) }
+    }
     var systemOrder: [String] = [] {
         didSet { storage.saveSystemOrder(systemOrder) }
     }
@@ -48,6 +51,7 @@ final class AppState {
         defaultCharts = storage.loadDefaultCharts() ?? ChartCatalog.defaultSelection
         systemCharts = storage.loadSystemCharts()
         systemOrder = storage.loadSystemOrder()
+        chartTitles = storage.loadChartTitles()
         isConfigured = !instances.isEmpty
         if selectedInstance != nil {
             loadSystems()
@@ -123,6 +127,15 @@ final class AppState {
             case (nil, nil): return lhs.name < rhs.name
             }
         }
+    }
+
+    func setTitle(_ title: String, chartID: String, systemID: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        var titles = chartTitles[systemID] ?? [:]
+        titles[chartID] = trimmed.isEmpty ? nil : trimmed
+        let updated = titles.isEmpty ? nil : titles
+        guard updated != chartTitles[systemID] else { return }
+        chartTitles[systemID] = updated
     }
 
     func charts(for systemID: String) -> [String] {
@@ -371,6 +384,15 @@ final class StorageManager {
     private let defaultChartsKey = "com.nohitdev.BeszelBar.defaultCharts"
     private let systemChartsKey = "com.nohitdev.BeszelBar.systemCharts"
     private let systemOrderKey = "com.nohitdev.BeszelBar.systemOrder"
+    private let chartTitlesKey = "com.nohitdev.BeszelBar.chartTitles"
+
+    func saveChartTitles(_ titles: [String: [String: String]]) {
+        defaults.set(titles, forKey: chartTitlesKey)
+    }
+
+    func loadChartTitles() -> [String: [String: String]] {
+        defaults.dictionary(forKey: chartTitlesKey) as? [String: [String: String]] ?? [:]
+    }
 
     func saveSystemOrder(_ ids: [String]) {
         defaults.set(ids, forKey: systemOrderKey)

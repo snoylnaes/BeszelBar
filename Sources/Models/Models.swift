@@ -37,6 +37,7 @@ struct SystemInfo: Codable, Hashable {
     let ct: Int?
     let efs: [String: Double]?
     let sv: [Int]?
+    let rdn: String?
 }
 
 extension SystemRecord {
@@ -93,9 +94,10 @@ struct SystemStatsDetail: Codable {
     let b: [Double]?
     let efs: [String: DiskStats]?
     let z: [String: DiskStats]?
+    let ni: [String: [Double]]?
 
     enum CodingKeys: String, CodingKey {
-        case cpu, mp, dp, ns, nr, m, mu, mb, d, du, b, efs, z
+        case cpu, mp, dp, ns, nr, m, mu, mb, d, du, b, efs, z, ni
     }
 
     init(from decoder: Decoder) throws {
@@ -113,6 +115,7 @@ struct SystemStatsDetail: Codable {
         b = try? container.decodeIfPresent([Double].self, forKey: .b)
         efs = try? container.decodeIfPresent([String: DiskStats].self, forKey: .efs)
         z = try? container.decodeIfPresent([String: DiskStats].self, forKey: .z)
+        ni = try? container.decodeIfPresent([String: [Double]].self, forKey: .ni)
     }
 }
 
@@ -120,6 +123,11 @@ struct DiskStats: Codable {
     let n: String?
     let d: Double?
     let du: Double?
+}
+
+struct InterfaceSample {
+    let sent: Double
+    let received: Double
 }
 
 struct DiskSample {
@@ -141,6 +149,7 @@ struct StatPoint: Identifiable {
     let netSent: Double?
     let netRecv: Double?
     let extraDisks: [String: DiskSample]
+    let interfaces: [String: InterfaceSample]
 
     var id: Date { date }
 }
@@ -160,7 +169,8 @@ extension SystemStatsRecord {
             diskUsed: stats.du,
             netSent: stats.sentBytesPerSecond,
             netRecv: stats.receivedBytesPerSecond,
-            extraDisks: stats.extraDisks
+            extraDisks: stats.extraDisks,
+            interfaces: stats.interfaces
         )
     }
 
@@ -182,6 +192,14 @@ extension SystemStatsDetail {
     var sentBytesPerSecond: Double? {
         if let b, b.count == 2 { return b[0] }
         return ns.map { $0 * Self.bytesPerMegabyte }
+    }
+
+    var interfaces: [String: InterfaceSample] {
+        var samples: [String: InterfaceSample] = [:]
+        for (name, values) in ni ?? [:] where values.count >= 2 {
+            samples[name] = InterfaceSample(sent: values[0], received: values[1])
+        }
+        return samples
     }
 
     var extraDisks: [String: DiskSample] {
@@ -331,6 +349,7 @@ struct AuthResponse: Codable {
 struct ChartOption: Identifiable, Hashable {
     let id: String
     let title: String
+    let detectedTitle: String
     let subtitle: String
 }
 
@@ -339,58 +358,85 @@ enum ChartCatalog {
     static let memory = "memory"
     static let disk = "disk"
     static let network = "network"
-    static let maxCharts = 6
+    static let searchThreshold = 6
+    static let defaultSelection = [cpu, memory, disk, network]
 
     private static let efsPrefix = "efs:"
     private static let poolPrefix = "z:"
-
-    static let builtIns = [
-        ChartOption(id: cpu, title: "CPU", subtitle: "Processor usage, percent"),
-        ChartOption(id: memory, title: "Memory", subtitle: "Used and cache, up to total RAM"),
-        ChartOption(id: disk, title: "Disk", subtitle: "Root filesystem, used of total"),
-        ChartOption(id: network, title: "Network", subtitle: "Sent and received, per second")
-    ]
-
-    static let defaultSelection = builtIns.map(\.id)
+    private static let interfacePrefix = "ni:"
 
     static func efsID(_ name: String) -> String { efsPrefix + name }
     static func poolID(_ key: String) -> String { poolPrefix + key }
+    static func interfaceID(_ name: String) -> String { interfacePrefix + name }
 
-    static func diskOptions(in history: [StatPoint]) -> [ChartOption] {
-        let disks = history.last?.extraDisks ?? [:]
-        return disks
-            .map { id, disk in
-                ChartOption(id: id, title: disk.name, subtitle: "\(diskKind(id)), \(StorageFormat.size(disk.total))")
-            }
-            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    static func isInterface(_ id: String) -> Bool { id.hasPrefix(interfacePrefix) }
+    static func interfaceName(_ id: String) -> String { String(id.dropFirst(interfacePrefix.count)) }
+
+    static func kind(of id: String) -> String {
+        if id.hasPrefix(poolPrefix) { return "Storage pool" }
+        if id.hasPrefix(efsPrefix) { return "Extra filesystem" }
+        if id.hasPrefix(interfacePrefix) { return "Network interface" }
+        return "Chart"
     }
 
-    static func options(in history: [StatPoint]) -> [ChartOption] {
-        builtIns + diskOptions(in: history)
-    }
-
-    static func missingOption(_ id: String) -> ChartOption {
-        ChartOption(id: id, title: fallbackTitle(id), subtitle: "\(diskKind(id)), no recent data")
-    }
-
-    static func title(for id: String, in history: [StatPoint]) -> String {
-        if let builtIn = builtIns.first(where: { $0.id == id }) { return builtIn.title }
-        if let disk = history.last?.extraDisks[id] { return disk.name }
-        return fallbackTitle(id)
-    }
-
-    static func shown(_ selected: [String]) -> [String] {
-        Array(selected.prefix(maxCharts))
-    }
-
-    private static func diskKind(_ id: String) -> String {
-        id.hasPrefix(poolPrefix) ? "Storage pool" : "Extra filesystem"
-    }
-
-    private static func fallbackTitle(_ id: String) -> String {
-        for prefix in [efsPrefix, poolPrefix] where id.hasPrefix(prefix) {
+    static func fallbackTitle(_ id: String) -> String {
+        for prefix in [efsPrefix, poolPrefix, interfacePrefix] where id.hasPrefix(prefix) {
             return String(id.dropFirst(prefix.count))
         }
         return id
+    }
+}
+
+struct ChartSource {
+    let options: [ChartOption]
+    private let aliases: [String: String]
+
+    init(system: SystemRecord?, history: [StatPoint], aliases: [String: String] = [:]) {
+        self.aliases = aliases
+        let latest = history.last
+        let make = { (id: String, detected: String, subtitle: String) in
+            Self.option(id, detected: detected, subtitle: subtitle, alias: aliases[id])
+        }
+        let builtIns = [
+            make(ChartCatalog.cpu, "CPU", "Processor usage, percent"),
+            make(ChartCatalog.memory, "Memory", "Used and cache, up to total RAM"),
+            make(ChartCatalog.disk, system?.info?.rdn ?? "Root", "Root filesystem, used of total"),
+            make(ChartCatalog.network, "Network", "All interfaces, sent and received")
+        ]
+        let disks = (latest?.extraDisks ?? [:]).map { id, disk in
+            make(id, disk.name, "\(ChartCatalog.kind(of: id)), \(StorageFormat.size(disk.total))")
+        }
+        let interfaces = (latest?.interfaces ?? [:]).keys.map { name in
+            let id = ChartCatalog.interfaceID(name)
+            return make(id, name, ChartCatalog.kind(of: id))
+        }
+        options = builtIns + Self.sorted(disks) + Self.sorted(interfaces)
+    }
+
+    func option(for id: String) -> ChartOption {
+        options.first { $0.id == id }
+            ?? Self.option(
+                id,
+                detected: ChartCatalog.fallbackTitle(id),
+                subtitle: "\(ChartCatalog.kind(of: id)), no recent data",
+                alias: aliases[id]
+            )
+    }
+
+    func title(for id: String) -> String {
+        option(for: id).title
+    }
+
+    private static func option(_ id: String, detected: String, subtitle: String, alias: String?) -> ChartOption {
+        ChartOption(
+            id: id,
+            title: alias ?? detected,
+            detectedTitle: detected,
+            subtitle: alias == nil ? subtitle : "\(detected) \u{00B7} \(subtitle)"
+        )
+    }
+
+    private static func sorted(_ options: [ChartOption]) -> [ChartOption] {
+        options.sorted { $0.detectedTitle.localizedStandardCompare($1.detectedTitle) == .orderedAscending }
     }
 }

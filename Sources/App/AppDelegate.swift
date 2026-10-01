@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         _ = AppState.shared.defaultCharts
                         _ = AppState.shared.systemCharts
                         _ = AppState.shared.systemOrder
+                        _ = AppState.shared.chartTitles
                     } onChange: {
                         continuation.resume()
                     }
