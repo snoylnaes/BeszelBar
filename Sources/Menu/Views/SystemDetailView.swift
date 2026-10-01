@@ -97,7 +97,8 @@ struct SystemDetailView: View {
                     point.cpu.map { ChartSample(date: point.date, value: $0, stacked: nil) }
                 },
                 yMax: nil,
-                format: { String(format: "%.0f%%", $0) }
+                format: { String(format: "%.0f%%", $0) },
+                preciseFormat: { String(format: "%.2f%%", $0) }
             )
         case ChartCatalog.memory:
             MetricChart(
@@ -109,7 +110,8 @@ struct SystemDetailView: View {
                     point.memUsed.map { ChartSample(date: point.date, value: $0, stacked: point.memCache) }
                 },
                 yMax: latest?.memTotal,
-                format: StorageFormat.axis
+                format: StorageFormat.axis,
+                preciseFormat: StorageFormat.precise
             )
         case ChartCatalog.disk:
             MetricChart(
@@ -121,7 +123,8 @@ struct SystemDetailView: View {
                     point.diskUsed.map { ChartSample(date: point.date, value: $0, stacked: nil) }
                 },
                 yMax: latest?.diskTotal,
-                format: StorageFormat.axis
+                format: StorageFormat.axis,
+                preciseFormat: StorageFormat.precise
             )
         case ChartCatalog.network:
             NetworkChart(
@@ -150,7 +153,8 @@ struct SystemDetailView: View {
                     point.extraDisks[chartID].map { ChartSample(date: point.date, value: $0.used, stacked: nil) }
                 },
                 yMax: disk?.total,
-                format: StorageFormat.axis
+                format: StorageFormat.axis,
+                preciseFormat: StorageFormat.precise
             )
         }
     }
@@ -219,6 +223,16 @@ enum UnitFormat {
         }
         return "\(number) \(units[unit])"
     }
+
+    static func precise(_ value: Double, units: [String]) -> String {
+        var value = value
+        var unit = 0
+        while value >= step, unit < units.count - 1 {
+            value /= step
+            unit += 1
+        }
+        return String(format: "%.2f %@", value, units[unit])
+    }
 }
 
 enum StorageFormat {
@@ -227,6 +241,10 @@ enum StorageFormat {
 
     static func axis(_ gigabytes: Double) -> String {
         UnitFormat.compact(gigabytes, units: units)
+    }
+
+    static func precise(_ gigabytes: Double) -> String {
+        UnitFormat.precise(gigabytes, units: units)
     }
 
     static func size(_ gigabytes: Double) -> String {
@@ -252,6 +270,8 @@ enum ChartLayout {
     static let cardPadding: CGFloat = 10
     static let cardCornerRadius: CGFloat = 10
     static let chartHeight: CGFloat = 88
+    static let readoutGap: CGFloat = 8
+    static let markerSize: CGFloat = 6
     static let contentWidth = panelWidth - 2 * panelPadding - 2 * cardPadding
 
     static func yLabelWidth(_ labels: [String]) -> CGFloat {
@@ -316,7 +336,7 @@ struct ChartTimeAxis {
     }
 }
 
-extension Chart {
+extension View {
     func metricAxes(time: ChartTimeAxis, axisMax: Double, format: @escaping (Double) -> String) -> some View {
         let values = [0, axisMax / 2, axisMax]
         let labelWidth = ChartLayout.yLabelWidth(values.map(format))
@@ -362,6 +382,8 @@ struct MetricChart: View {
     let samples: [ChartSample]
     let yMax: Double?
     let format: (Double) -> String
+    let preciseFormat: (Double) -> String
+    @State private var hoverX: CGFloat?
 
     private var axisMax: Double {
         if let yMax, yMax > 0 { return yMax }
@@ -405,6 +427,18 @@ struct MetricChart: View {
                     .foregroundStyle(color)
                     .lineStyle(StrokeStyle(lineWidth: 1))
             }
+            .chartOverlay { proxy in
+                ChartHoverLayer(proxy: proxy, dates: samples.map(\.date), hoverX: $hoverX) { index in
+                    let sample = samples[index]
+                    if let stacked = sample.stacked {
+                        return [
+                            ReadoutItem(color: color, name: "Used", value: preciseFormat(sample.value), markerY: sample.value),
+                            ReadoutItem(color: color.opacity(0.4), name: "Cache", value: preciseFormat(stacked), markerY: sample.value + stacked)
+                        ]
+                    }
+                    return [ReadoutItem(color: color, name: label, value: preciseFormat(sample.value), markerY: sample.value)]
+                }
+            }
             .metricAxes(time: ChartTimeAxis(dates: samples.map(\.date)), axisMax: axisMax, format: format)
         }
     }
@@ -421,6 +455,7 @@ struct NetworkSample: Identifiable {
 struct NetworkChart: View {
     let title: String
     let samples: [NetworkSample]
+    @State private var hoverX: CGFloat?
 
     private var axisMax: Double {
         let peak = samples.map { max($0.sent, $0.received) }.max() ?? 0
@@ -460,12 +495,140 @@ struct NetworkChart: View {
                     .foregroundStyle(ChartPalette.received)
                     .lineStyle(StrokeStyle(lineWidth: 1))
             }
+            .chartOverlay { proxy in
+                ChartHoverLayer(proxy: proxy, dates: samples.map(\.date), hoverX: $hoverX) { index in
+                    let sample = samples[index]
+                    return [
+                        ReadoutItem(color: ChartPalette.sent, name: "Sent", value: Self.preciseRate(sample.sent), markerY: sample.sent),
+                        ReadoutItem(color: ChartPalette.received, name: "Received", value: Self.preciseRate(sample.received), markerY: sample.received)
+                    ]
+                }
+            }
             .metricAxes(time: ChartTimeAxis(dates: samples.map(\.date)), axisMax: axisMax, format: Self.rate)
         }
     }
 
+    private static let rateUnits = ["B/s", "KB/s", "MB/s", "GB/s"]
+
     static func rate(_ bytesPerSecond: Double) -> String {
-        UnitFormat.compact(bytesPerSecond, units: ["B/s", "KB/s", "MB/s", "GB/s"])
+        UnitFormat.compact(bytesPerSecond, units: rateUnits)
+    }
+
+    static func preciseRate(_ bytesPerSecond: Double) -> String {
+        UnitFormat.precise(bytesPerSecond, units: rateUnits)
+    }
+}
+
+struct ReadoutItem: Identifiable {
+    let color: Color
+    let name: String
+    let value: String
+    let markerY: Double
+
+    var id: String { name }
+}
+
+struct ChartHoverLayer: View {
+    let proxy: ChartProxy
+    let dates: [Date]
+    @Binding var hoverX: CGFloat?
+    let items: (Int) -> [ReadoutItem]
+
+    var body: some View {
+        GeometryReader { geometry in
+            if let plotFrame = proxy.plotFrame {
+                let plot = geometry[plotFrame]
+                ZStack(alignment: .topLeading) {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let location) where plot.minX...plot.maxX ~= location.x:
+                                hoverX = location.x - plot.minX
+                            default:
+                                hoverX = nil
+                            }
+                        }
+                    if let index = nearestIndex(), let lineX = proxy.position(forX: dates[index]) {
+                        let readoutItems = items(index)
+                        Group {
+                            Rectangle()
+                                .fill(Color.secondary.opacity(0.35))
+                                .frame(width: 1, height: plot.height)
+                                .offset(x: plot.minX + lineX, y: plot.minY)
+                            ForEach(readoutItems) { item in
+                                if let markerY = proxy.position(forY: item.markerY) {
+                                    Circle()
+                                        .fill(item.color)
+                                        .frame(width: ChartLayout.markerSize, height: ChartLayout.markerSize)
+                                        .offset(
+                                            x: plot.minX + lineX - ChartLayout.markerSize / 2,
+                                            y: plot.minY + markerY - ChartLayout.markerSize / 2
+                                        )
+                                }
+                            }
+                            if lineX > plot.width / 2 {
+                                ChartReadout(date: dates[index], items: readoutItems)
+                                    .frame(width: max(0, plot.minX + lineX - ChartLayout.readoutGap), alignment: .trailing)
+                                    .offset(y: plot.minY)
+                            } else {
+                                ChartReadout(date: dates[index], items: readoutItems)
+                                    .offset(x: plot.minX + lineX + ChartLayout.readoutGap, y: plot.minY)
+                            }
+                        }
+                        .allowsHitTesting(false)
+                    }
+                }
+            }
+        }
+    }
+
+    private func nearestIndex() -> Int? {
+        guard let hoverX, let date: Date = proxy.value(atX: hoverX) else { return nil }
+        return dates.indices.min { abs(dates[$0].timeIntervalSince(date)) < abs(dates[$1].timeIntervalSince(date)) }
+    }
+}
+
+struct ChartReadout: View {
+    let date: Date
+    let items: [ReadoutItem]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(date, format: .dateTime.hour().minute())
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.primary)
+            Grid(alignment: .leading, horizontalSpacing: 5, verticalSpacing: 3) {
+                ForEach(items) { item in
+                    GridRow {
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(item.color)
+                            .frame(width: 3, height: 10)
+                        Text(item.name)
+                            .foregroundColor(.secondary)
+                        Text(item.value)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                            .gridColumnAlignment(.trailing)
+                            .padding(.leading, 4)
+                    }
+                }
+            }
+            .font(.system(size: 10).monospacedDigit())
+        }
+        .fixedSize()
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        )
     }
 }
 
