@@ -25,11 +25,13 @@ final class RefreshService {
         stop()
 
         let interval = TimeInterval(refreshInterval)
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+        let newTimer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refresh()
             }
         }
+        RunLoop.main.add(newTimer, forMode: .common)
+        timer = newTimer
 
         refresh()
     }

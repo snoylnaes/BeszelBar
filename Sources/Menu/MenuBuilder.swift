@@ -186,54 +186,29 @@ enum MenuBuilder {
 
         let detailItem = NSMenuItem()
         let detailView = NSHostingView(rootView: SystemDetailView(system: system, details: details))
-        detailView.frame = NSRect(x: 0, y: 0, width: 250, height: 180)
+        detailView.frame = NSRect(origin: .zero, size: detailView.fittingSize)
         detailItem.view = detailView
         submenu.addItem(detailItem)
 
         if !containers.isEmpty {
             submenu.addItem(NSMenuItem.separator())
 
-            let headerItem = NSMenuItem()
-            let headerView = NSHostingView(rootView:
-                HStack {
-                    Label("Containers (\(containers.count))", systemImage: "shippingbox.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.primary)
-                    Spacer()
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-            )
-            headerView.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
-            headerItem.view = headerView
-            submenu.addItem(headerItem)
-
             let sortedContainers = containers.sorted { $0.name.lowercased() < $1.name.lowercased() }
 
-            for container in sortedContainers.prefix(10) {
+            let containersItem = NSMenuItem(title: "Containers (\(containers.count))", action: nil, keyEquivalent: "")
+            containersItem.image = NSImage(systemSymbolName: "shippingbox.fill", accessibilityDescription: nil)
+            containersItem.image?.size = NSSize(width: 14, height: 14)
+
+            let containersSubmenu = NSMenu()
+            for container in sortedContainers {
                 let containerItem = NSMenuItem()
                 let view = NSHostingView(rootView: ContainerMenuRowView(container: container))
                 view.frame = NSRect(x: 0, y: 0, width: 260, height: 50)
                 containerItem.view = view
-                submenu.addItem(containerItem)
+                containersSubmenu.addItem(containerItem)
             }
-
-            if containers.count > 10 {
-                let moreItem = NSMenuItem(title: "+\(containers.count - 10) more containers", action: nil, keyEquivalent: "")
-                moreItem.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: nil)
-                moreItem.image?.size = NSSize(width: 12, height: 12)
-
-                let moreSubmenu = NSMenu()
-                for container in sortedContainers.dropFirst(10) {
-                    let containerItem = NSMenuItem()
-                    let view = NSHostingView(rootView: ContainerMenuRowView(container: container))
-                    view.frame = NSRect(x: 0, y: 0, width: 260, height: 50)
-                    containerItem.view = view
-                    moreSubmenu.addItem(containerItem)
-                }
-                moreItem.submenu = moreSubmenu
-                submenu.addItem(moreItem)
-            }
+            containersItem.submenu = containersSubmenu
+            submenu.addItem(containersItem)
         }
 
         submenu.addItem(NSMenuItem.separator())

@@ -85,9 +85,75 @@ struct SystemStatsDetail: Codable {
     let dp: Double?
     let ns: Double?
     let nr: Double?
+    let m: Double?
+    let mu: Double?
+    let mb: Double?
+    let d: Double?
+    let du: Double?
+    let b: [Double]?
 
     enum CodingKeys: String, CodingKey {
-        case cpu, mp, dp, ns, nr
+        case cpu, mp, dp, ns, nr, m, mu, mb, d, du, b
+    }
+}
+
+struct StatPoint: Identifiable {
+    let date: Date
+    let cpu: Double?
+    let mem: Double?
+    let disk: Double?
+    let memTotal: Double?
+    let memUsed: Double?
+    let memCache: Double?
+    let diskTotal: Double?
+    let diskUsed: Double?
+    let netSent: Double?
+    let netRecv: Double?
+
+    var id: Date { date }
+}
+
+extension SystemStatsRecord {
+    var point: StatPoint? {
+        guard let date = Self.parseCreated(created), let stats else { return nil }
+        return StatPoint(
+            date: date,
+            cpu: stats.cpu,
+            mem: stats.mp,
+            disk: stats.dp,
+            memTotal: stats.m,
+            memUsed: stats.mu,
+            memCache: stats.mb,
+            diskTotal: stats.d,
+            diskUsed: stats.du,
+            netSent: stats.sentBytesPerSecond,
+            netRecv: stats.receivedBytesPerSecond
+        )
+    }
+
+    private static func parseCreated(_ string: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        for format in ["yyyy-MM-dd HH:mm:ss.SSS'Z'", "yyyy-MM-dd HH:mm:ss'Z'"] {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: string) { return date }
+        }
+        return nil
+    }
+}
+
+extension SystemStatsDetail {
+    private static let bytesPerMegabyte = 1_048_576.0
+
+    var sentBytesPerSecond: Double? {
+        if let b, b.count == 2 { return b[0] }
+        return ns.map { $0 * Self.bytesPerMegabyte }
+    }
+
+    var receivedBytesPerSecond: Double? {
+        if let b, b.count == 2 { return b[1] }
+        return nr.map { $0 * Self.bytesPerMegabyte }
     }
 }
 

@@ -151,10 +151,12 @@ final class BeszelAPIService: @unchecked Sendable {
             throw URLError(.badURL)
         }
         components.path = "/api/collections/system_stats/records"
-        components.queryItems = [
+        let filter = "system = '\(systemID)' && type = '1m'"
+        let encodedFilter = filter.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? filter
+        components.percentEncodedQueryItems = [
             URLQueryItem(name: "perPage", value: String(limit)),
             URLQueryItem(name: "sort", value: "-created"),
-            URLQueryItem(name: "filter", value: "system = '\(systemID)'")
+            URLQueryItem(name: "filter", value: encodedFilter)
         ]
 
         guard let url = components.url else { throw URLError(.badURL) }

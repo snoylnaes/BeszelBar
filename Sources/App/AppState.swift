@@ -11,6 +11,7 @@ final class AppState {
     var selectedInstanceSystems: [SystemRecord] = []
     var systemDetails: [String: SystemDetailsRecord] = [:]
     var containers: [String: [ContainerRecord]] = [:]
+    var history: [String: [StatPoint]] = [:]
     var activeAlerts: [AlertRecord] = []
     var isLoading = false
     var errorMessage: String?
@@ -23,6 +24,7 @@ final class AppState {
     private var detailsTask: Task<Void, Never>?
     private var alertTask: Task<Void, Never>?
     private var containerTask: Task<Void, Never>?
+    private var historyTask: Task<Void, Never>?
 
     private init() {
         loadInstances()
@@ -50,12 +52,37 @@ final class AppState {
                 let systems = try await service.fetchSystems()
                 guard !Task.isCancelled else { return }
                 selectedInstanceSystems = systems.sorted { $0.name < $1.name }
+                loadHistory()
             } catch is CancellationError {
                 return
             } catch {
                 guard !Task.isCancelled else { return }
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    func loadHistory() {
+        guard let instance = selectedInstance else { return }
+
+        let ids = selectedInstanceSystems.map(\.id)
+        historyTask?.cancel()
+        historyTask = Task {
+            let service = getOrCreateService(for: instance)
+            var fetched: [String: [StatPoint]] = [:]
+            await withTaskGroup(of: (String, [StatPoint]).self) { group in
+                for id in ids {
+                    group.addTask {
+                        let records = (try? await service.fetchSystemStats(systemID: id, limit: 60)) ?? []
+                        return (id, records.compactMap(\.point).sorted { $0.date < $1.date })
+                    }
+                }
+                for await (id, points) in group where !points.isEmpty {
+                    fetched[id] = points
+                }
+            }
+            guard !Task.isCancelled else { return }
+            history.merge(fetched) { _, new in new }
         }
     }
 
@@ -128,6 +155,7 @@ final class AppState {
         selectedInstanceSystems = []
         systemDetails = [:]
         containers = [:]
+        history = [:]
         activeAlerts = []
         loadSystems()
         loadSystemDetails()
