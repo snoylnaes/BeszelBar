@@ -25,13 +25,15 @@ struct SettingsView: View {
                     GeneralView()
                 case .hubs:
                     HubsView(appState: appState)
+                case .systems:
+                    SystemsView(appState: appState)
                 case .about:
                     AboutView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 500, height: 420)
+        .frame(width: 500, height: 540)
     }
 }
 
@@ -93,12 +95,14 @@ struct TabButton: View {
 enum SettingsTab: CaseIterable {
     case general
     case hubs
+    case systems
     case about
 
     var title: String {
         switch self {
         case .general: return "General"
         case .hubs: return "Hubs"
+        case .systems: return "Systems"
         case .about: return "About"
         }
     }
@@ -107,6 +111,7 @@ enum SettingsTab: CaseIterable {
         switch self {
         case .general: return "gear"
         case .hubs: return "server.rack"
+        case .systems: return "chart.xyaxis.line"
         case .about: return "info.circle"
         }
     }
@@ -171,6 +176,207 @@ struct HubsView: View {
         }
         .sheet(item: $instanceToEdit) { instance in
             EditHubSheet(appState: appState, instance: instance)
+        }
+    }
+}
+
+struct SystemsView: View {
+    var appState: AppState
+    @State private var selection: String? = SystemsView.defaultRow
+
+    private static let defaultRow = "__default__"
+
+    var body: some View {
+        HStack(spacing: 0) {
+            List(selection: $selection) {
+                Label("Default Charts", systemImage: "square.grid.2x2")
+                    .tag(SystemsView.defaultRow)
+                Section("Systems") {
+                    ForEach(appState.selectedInstanceSystems) { system in
+                        HStack {
+                            Text(system.name.isEmpty ? system.id : system.name)
+                                .foregroundColor(appState.hiddenSystems.contains(system.id) ? .secondary : .primary)
+                            Spacer()
+                            if appState.hiddenSystems.contains(system.id) {
+                                Image(systemName: "eye.slash")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .tag(system.id)
+                    }
+                    .onMove { source, destination in
+                        appState.moveSystems(fromOffsets: source, toOffset: destination)
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+            .frame(width: 170)
+
+            Divider()
+
+            Group {
+                if let system = appState.selectedInstanceSystems.first(where: { $0.id == selection }) {
+                    SystemChartsView(appState: appState, system: system)
+                        .id(system.id)
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        SectionHeader(title: "DEFAULT CHARTS")
+                        Text("Charts for systems that use the default.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 8)
+                        ChartChecklist(
+                            options: ChartCatalog.builtIns,
+                            selected: Binding(
+                                get: { appState.defaultCharts },
+                                set: { appState.defaultCharts = $0 }
+                            )
+                        )
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+}
+
+struct SystemChartsView: View {
+    var appState: AppState
+    let system: SystemRecord
+
+    private var usesDefault: Bool {
+        appState.systemCharts[system.id] == nil
+    }
+
+    private var options: [ChartOption] {
+        let available = ChartCatalog.options(in: appState.history[system.id] ?? [])
+        let known = Set(available.map(\.id))
+        let missing = appState.charts(for: system.id)
+            .filter { !known.contains($0) }
+            .map(ChartCatalog.missingOption)
+        return available + missing
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SectionHeader(title: (system.name.isEmpty ? system.id : system.name).uppercased())
+
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Show in menu", isOn: Binding(
+                    get: { !appState.hiddenSystems.contains(system.id) },
+                    set: { appState.setHidden(!$0, systemID: system.id) }
+                ))
+                Toggle("Use default charts", isOn: Binding(
+                    get: { usesDefault },
+                    set: { useDefault in
+                        appState.systemCharts[system.id] = useDefault ? nil : appState.defaultCharts
+                    }
+                ))
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 8)
+
+            ChartChecklist(
+                options: options,
+                selected: Binding(
+                    get: { appState.charts(for: system.id) },
+                    set: { appState.systemCharts[system.id] = $0 }
+                )
+            )
+            .disabled(usesDefault)
+        }
+    }
+}
+
+struct ChartChecklist: View {
+    let options: [ChartOption]
+    @Binding var selected: [String]
+    @State private var search = ""
+
+    private var shownOptions: [ChartOption] {
+        selected.compactMap { id in options.first { $0.id == id } }.filter(matches)
+    }
+
+    private var availableOptions: [ChartOption] {
+        options.filter { !selected.contains($0.id) }.filter(matches)
+    }
+
+    private var atLimit: Bool {
+        selected.count >= ChartCatalog.maxCharts
+    }
+
+    private func matches(_ option: ChartOption) -> Bool {
+        search.isEmpty
+            || option.title.localizedCaseInsensitiveContains(search)
+            || option.subtitle.localizedCaseInsensitiveContains(search)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if options.count > ChartCatalog.maxCharts {
+                TextField("Search charts", text: $search)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 6)
+            }
+
+            List {
+                Section("Shown") {
+                    ForEach(shownOptions) { option in
+                        ChartOptionRow(option: option, isOn: true, isReorderable: search.isEmpty) {
+                            selected.removeAll { $0 == option.id }
+                        }
+                    }
+                    .onMove { source, destination in
+                        selected.move(fromOffsets: source, toOffset: destination)
+                    }
+                    .moveDisabled(!search.isEmpty)
+                }
+                if !availableOptions.isEmpty {
+                    Section("Available") {
+                        ForEach(availableOptions) { option in
+                            ChartOptionRow(option: option, isOn: false, isReorderable: false) {
+                                selected.append(option.id)
+                            }
+                            .disabled(atLimit)
+                        }
+                    }
+                }
+            }
+            .listStyle(.inset)
+
+            Text("\(selected.count) of \(ChartCatalog.maxCharts) charts shown. Drag to reorder.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+        }
+    }
+}
+
+struct ChartOptionRow: View {
+    let option: ChartOption
+    let isOn: Bool
+    let isReorderable: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        HStack {
+            Toggle(isOn: Binding(get: { isOn }, set: { _ in toggle() })) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(option.title)
+                    Text(option.subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .toggleStyle(.checkbox)
+            Spacer()
+            if isReorderable {
+                Image(systemName: "line.3.horizontal")
+                    .foregroundColor(.secondary)
+            }
         }
     }
 }

@@ -29,17 +29,20 @@ enum MenuBuilder {
             menu.addItem(item)
         } else if appState.selectedInstanceSystems.isEmpty {
             menu.addItem(createInfoItem("No Systems Found", subtext: "Check your hub configuration"))
+        } else if appState.visibleSystems.isEmpty {
+            menu.addItem(createInfoItem("All Systems Hidden", subtext: "Choose systems to show in Settings"))
         } else {
-            for system in appState.selectedInstanceSystems.prefix(15) {
+            let systems = appState.visibleSystems
+            for system in systems.prefix(15) {
                 let item = createSystemItem(for: system, appState: appState)
                 menu.addItem(item)
             }
 
-            if appState.selectedInstanceSystems.count > 15 {
-                let more = NSMenuItem(title: "+\(appState.selectedInstanceSystems.count - 15) more systems", action: nil, keyEquivalent: "")
+            if systems.count > 15 {
+                let more = NSMenuItem(title: "+\(systems.count - 15) more systems", action: nil, keyEquivalent: "")
                 more.isEnabled = false
                 more.attributedTitle = NSAttributedString(
-                    string: "+\(appState.selectedInstanceSystems.count - 15) more systems",
+                    string: "+\(systems.count - 15) more systems",
                     attributes: [.foregroundColor: NSColor.secondaryLabelColor]
                 )
                 menu.addItem(more)
@@ -185,7 +188,7 @@ enum MenuBuilder {
         let details = appState.systemDetails[system.id]
 
         let detailItem = NSMenuItem()
-        let detailView = NSHostingView(rootView: SystemDetailView(system: system, details: details))
+        let detailView = NSHostingView(rootView: SystemDetailView(system: system, details: details, charts: appState.charts(for: system.id)))
         detailView.frame = NSRect(origin: .zero, size: detailView.fittingSize)
         detailItem.view = detailView
         submenu.addItem(detailItem)

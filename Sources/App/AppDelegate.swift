@@ -40,6 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         _ = AppState.shared.activeAlerts
                         _ = AppState.shared.systemDetails
                         _ = AppState.shared.containers
+                        _ = AppState.shared.hiddenSystems
+                        _ = AppState.shared.defaultCharts
+                        _ = AppState.shared.systemCharts
+                        _ = AppState.shared.systemOrder
                     } onChange: {
                         continuation.resume()
                     }

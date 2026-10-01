@@ -4,6 +4,7 @@ import Charts
 struct SystemDetailView: View {
     let system: SystemRecord
     var details: SystemDetailsRecord? = nil
+    var charts: [String] = ChartCatalog.defaultSelection
 
     private var cpuModel: String? {
         details?.cpu ?? system.info?.m
@@ -77,63 +78,81 @@ struct SystemDetailView: View {
                     .foregroundColor(.primary)
 
                 let history = AppState.shared.history[system.id] ?? []
-                let latest = history.last
-                if let cpu = latest?.cpu ?? system.cpuPercentage {
-                    MetricChart(
-                        label: "CPU",
-                        percent: cpu,
-                        detail: nil,
-                        color: ChartPalette.cpu,
-                        samples: history.compactMap { point in
-                            point.cpu.map { ChartSample(date: point.date, value: $0, stacked: nil) }
-                        },
-                        yMax: nil,
-                        format: { String(format: "%.0f%%", $0) }
-                    )
-                }
-                if let mem = latest?.mem ?? system.memoryPercentage {
-                    MetricChart(
-                        label: "Memory",
-                        percent: mem,
-                        detail: usageDetail(used: latest?.memUsed, total: latest?.memTotal),
-                        color: ChartPalette.memory,
-                        samples: history.compactMap { point in
-                            point.memUsed.map { ChartSample(date: point.date, value: $0, stacked: point.memCache) }
-                        },
-                        yMax: latest?.memTotal,
-                        format: { String(format: "%.0f GB", $0) }
-                    )
-                }
-                if let disk = latest?.disk ?? system.diskPercentage {
-                    MetricChart(
-                        label: "Disk",
-                        percent: disk,
-                        detail: usageDetail(used: latest?.diskUsed, total: latest?.diskTotal),
-                        color: ChartPalette.disk,
-                        samples: history.compactMap { point in
-                            point.diskUsed.map { ChartSample(date: point.date, value: $0, stacked: nil) }
-                        },
-                        yMax: latest?.diskTotal,
-                        format: { String(format: "%.0f GB", $0) }
-                    )
-                }
-                if let latest, latest.netSent != nil || latest.netRecv != nil {
-                    NetworkChart(
-                        samples: history.map {
-                            NetworkSample(date: $0.date, sent: $0.netSent ?? 0, received: $0.netRecv ?? 0)
-                        }
-                    )
+                ForEach(ChartCatalog.shown(charts), id: \.self) { chartID in
+                    chart(chartID, history: history)
                 }
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, ChartLayout.panelPadding)
         .padding(.vertical, 6)
-        .frame(width: 270)
+        .frame(width: ChartLayout.panelWidth)
+    }
+
+    @ViewBuilder
+    private func chart(_ chartID: String, history: [StatPoint]) -> some View {
+        let latest = history.last
+        switch chartID {
+        case ChartCatalog.cpu:
+            MetricChart(
+                label: "CPU",
+                percent: latest?.cpu ?? system.cpuPercentage,
+                detail: nil,
+                color: ChartPalette.cpu,
+                samples: history.compactMap { point in
+                    point.cpu.map { ChartSample(date: point.date, value: $0, stacked: nil) }
+                },
+                yMax: nil,
+                format: { String(format: "%.0f%%", $0) }
+            )
+        case ChartCatalog.memory:
+            MetricChart(
+                label: "Memory",
+                percent: latest?.mem ?? system.memoryPercentage,
+                detail: usageDetail(used: latest?.memUsed, total: latest?.memTotal),
+                color: ChartPalette.memory,
+                samples: history.compactMap { point in
+                    point.memUsed.map { ChartSample(date: point.date, value: $0, stacked: point.memCache) }
+                },
+                yMax: latest?.memTotal,
+                format: StorageFormat.axis(total: latest?.memTotal)
+            )
+        case ChartCatalog.disk:
+            MetricChart(
+                label: "Disk",
+                percent: latest?.disk ?? system.diskPercentage,
+                detail: usageDetail(used: latest?.diskUsed, total: latest?.diskTotal),
+                color: ChartPalette.disk,
+                samples: history.compactMap { point in
+                    point.diskUsed.map { ChartSample(date: point.date, value: $0, stacked: nil) }
+                },
+                yMax: latest?.diskTotal,
+                format: StorageFormat.axis(total: latest?.diskTotal)
+            )
+        case ChartCatalog.network:
+            NetworkChart(
+                samples: history.map {
+                    NetworkSample(date: $0.date, sent: $0.netSent ?? 0, received: $0.netRecv ?? 0)
+                }
+            )
+        default:
+            let disk = latest?.extraDisks[chartID]
+            MetricChart(
+                label: ChartCatalog.title(for: chartID, in: history),
+                percent: disk.flatMap { $0.total > 0 ? $0.used / $0.total * 100 : nil },
+                detail: usageDetail(used: disk?.used, total: disk?.total),
+                color: ChartPalette.disk,
+                samples: history.compactMap { point in
+                    point.extraDisks[chartID].map { ChartSample(date: point.date, value: $0.used, stacked: nil) }
+                },
+                yMax: disk?.total,
+                format: StorageFormat.axis(total: disk?.total)
+            )
+        }
     }
 
     private func usageDetail(used: Double?, total: Double?) -> String? {
         guard let used, let total else { return nil }
-        return String(format: "%.1f / %.1f GB", used, total)
+        return StorageFormat.usage(used: used, total: total)
     }
 
     private func formatUptime(_ seconds: Double) -> String {
@@ -177,6 +196,39 @@ enum ChartPalette {
     static let received = Color(red: 92 / 255, green: 181 / 255, blue: 141 / 255)
 }
 
+enum StorageFormat {
+    private static let gigabytesPerTerabyte = 1024.0
+
+    static func axis(total: Double?) -> (Double) -> String {
+        if let total, total >= gigabytesPerTerabyte {
+            return { String(format: "%.0f TB", $0 / gigabytesPerTerabyte) }
+        }
+        return { String(format: "%.0f GB", $0) }
+    }
+
+    static func size(_ gigabytes: Double) -> String {
+        if gigabytes >= gigabytesPerTerabyte {
+            return String(format: "%.1f TB", gigabytes / gigabytesPerTerabyte)
+        }
+        return String(format: "%.0f GB", gigabytes)
+    }
+
+    static func usage(used: Double, total: Double) -> String {
+        if total >= gigabytesPerTerabyte {
+            return String(format: "%.1f / %.1f TB", used / gigabytesPerTerabyte, total / gigabytesPerTerabyte)
+        }
+        return String(format: "%.1f / %.1f GB", used, total)
+    }
+}
+
+enum ChartLayout {
+    static let panelWidth: CGFloat = 310
+    static let panelPadding: CGFloat = 8
+    static let yLabelWidth: CGFloat = 48
+    static let yLabelGap: CGFloat = 4
+    static let plotWidth = panelWidth - 2 * panelPadding - yLabelWidth - yLabelGap
+}
+
 struct ChartSample: Identifiable {
     let date: Date
     let value: Double
@@ -207,7 +259,7 @@ struct ChartTimeAxis {
 
     func labelShift(for date: Date) -> CGFloat {
         let span = range.upperBound.timeIntervalSince(range.lowerBound)
-        let plotWidth: CGFloat = 225
+        let plotWidth = ChartLayout.plotWidth
         let halfLabel: CGFloat = 19
         let fromLeft = CGFloat(date.timeIntervalSince(range.lowerBound) / span) * plotWidth
         let fromRight = plotWidth - fromLeft
@@ -227,7 +279,10 @@ extension Chart {
                     AxisGridLine().foregroundStyle(Color.secondary.opacity(0.2))
                     AxisValueLabel {
                         if let number = value.as(Double.self) {
-                            Text(format(number)).font(.system(size: 8))
+                            Text(format(number))
+                                .font(.system(size: 8))
+                                .lineLimit(1)
+                                .frame(width: ChartLayout.yLabelWidth, alignment: .trailing)
                         }
                     }
                 }
@@ -251,7 +306,7 @@ extension Chart {
 
 struct MetricChart: View {
     let label: String
-    let percent: Double
+    let percent: Double?
     let detail: String?
     let color: Color
     let samples: [ChartSample]
@@ -265,14 +320,14 @@ struct MetricChart: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(label)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
-                Text("\(Int(percent))%")
+                Text(percent.map { "\(Int($0))%" } ?? "\u{2013}")
                     .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                    .foregroundColor(percent >= 70 ? AppColors.level(percent) : .primary)
+                    .foregroundColor(percent.map { $0 >= 70 ? AppColors.level($0) : .primary } ?? .secondary)
                 Spacer()
                 if let detail {
                     Text(detail)
@@ -321,7 +376,7 @@ struct NetworkChart: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Network")
                     .font(.system(size: 11, weight: .medium))

@@ -91,10 +91,41 @@ struct SystemStatsDetail: Codable {
     let d: Double?
     let du: Double?
     let b: [Double]?
+    let efs: [String: DiskStats]?
+    let z: [String: DiskStats]?
 
     enum CodingKeys: String, CodingKey {
-        case cpu, mp, dp, ns, nr, m, mu, mb, d, du, b
+        case cpu, mp, dp, ns, nr, m, mu, mb, d, du, b, efs, z
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        cpu = try container.decodeIfPresent(Double.self, forKey: .cpu)
+        mp = try container.decodeIfPresent(Double.self, forKey: .mp)
+        dp = try container.decodeIfPresent(Double.self, forKey: .dp)
+        ns = try container.decodeIfPresent(Double.self, forKey: .ns)
+        nr = try container.decodeIfPresent(Double.self, forKey: .nr)
+        m = try container.decodeIfPresent(Double.self, forKey: .m)
+        mu = try container.decodeIfPresent(Double.self, forKey: .mu)
+        mb = try container.decodeIfPresent(Double.self, forKey: .mb)
+        d = try container.decodeIfPresent(Double.self, forKey: .d)
+        du = try container.decodeIfPresent(Double.self, forKey: .du)
+        b = try? container.decodeIfPresent([Double].self, forKey: .b)
+        efs = try? container.decodeIfPresent([String: DiskStats].self, forKey: .efs)
+        z = try? container.decodeIfPresent([String: DiskStats].self, forKey: .z)
+    }
+}
+
+struct DiskStats: Codable {
+    let n: String?
+    let d: Double?
+    let du: Double?
+}
+
+struct DiskSample {
+    let name: String
+    let total: Double
+    let used: Double
 }
 
 struct StatPoint: Identifiable {
@@ -109,6 +140,7 @@ struct StatPoint: Identifiable {
     let diskUsed: Double?
     let netSent: Double?
     let netRecv: Double?
+    let extraDisks: [String: DiskSample]
 
     var id: Date { date }
 }
@@ -127,7 +159,8 @@ extension SystemStatsRecord {
             diskTotal: stats.d,
             diskUsed: stats.du,
             netSent: stats.sentBytesPerSecond,
-            netRecv: stats.receivedBytesPerSecond
+            netRecv: stats.receivedBytesPerSecond,
+            extraDisks: stats.extraDisks
         )
     }
 
@@ -149,6 +182,21 @@ extension SystemStatsDetail {
     var sentBytesPerSecond: Double? {
         if let b, b.count == 2 { return b[0] }
         return ns.map { $0 * Self.bytesPerMegabyte }
+    }
+
+    var extraDisks: [String: DiskSample] {
+        var disks: [String: DiskSample] = [:]
+        for (name, disk) in efs ?? [:] {
+            if let total = disk.d, let used = disk.du {
+                disks[ChartCatalog.efsID(name)] = DiskSample(name: name, total: total, used: used)
+            }
+        }
+        for (key, disk) in z ?? [:] {
+            if let total = disk.d, let used = disk.du {
+                disks[ChartCatalog.poolID(key)] = DiskSample(name: disk.n ?? key, total: total, used: used)
+            }
+        }
+        return disks
     }
 
     var receivedBytesPerSecond: Double? {
@@ -278,4 +326,71 @@ struct PocketBaseListResponse<T: Codable>: Codable {
 
 struct AuthResponse: Codable {
     let token: String
+}
+
+struct ChartOption: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let subtitle: String
+}
+
+enum ChartCatalog {
+    static let cpu = "cpu"
+    static let memory = "memory"
+    static let disk = "disk"
+    static let network = "network"
+    static let maxCharts = 6
+
+    private static let efsPrefix = "efs:"
+    private static let poolPrefix = "z:"
+
+    static let builtIns = [
+        ChartOption(id: cpu, title: "CPU", subtitle: "Processor usage, percent"),
+        ChartOption(id: memory, title: "Memory", subtitle: "Used and cache, up to total RAM"),
+        ChartOption(id: disk, title: "Disk", subtitle: "Root filesystem, used of total"),
+        ChartOption(id: network, title: "Network", subtitle: "Sent and received, per second")
+    ]
+
+    static let defaultSelection = builtIns.map(\.id)
+
+    static func efsID(_ name: String) -> String { efsPrefix + name }
+    static func poolID(_ key: String) -> String { poolPrefix + key }
+
+    static func diskOptions(in history: [StatPoint]) -> [ChartOption] {
+        let disks = history.last?.extraDisks ?? [:]
+        return disks
+            .map { id, disk in
+                ChartOption(id: id, title: disk.name, subtitle: "\(diskKind(id)), \(StorageFormat.size(disk.total))")
+            }
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
+
+    static func options(in history: [StatPoint]) -> [ChartOption] {
+        builtIns + diskOptions(in: history)
+    }
+
+    static func missingOption(_ id: String) -> ChartOption {
+        ChartOption(id: id, title: fallbackTitle(id), subtitle: "\(diskKind(id)), no recent data")
+    }
+
+    static func title(for id: String, in history: [StatPoint]) -> String {
+        if let builtIn = builtIns.first(where: { $0.id == id }) { return builtIn.title }
+        if let disk = history.last?.extraDisks[id] { return disk.name }
+        return fallbackTitle(id)
+    }
+
+    static func shown(_ selected: [String]) -> [String] {
+        Array(selected.prefix(maxCharts))
+    }
+
+    private static func diskKind(_ id: String) -> String {
+        id.hasPrefix(poolPrefix) ? "Storage pool" : "Extra filesystem"
+    }
+
+    private static func fallbackTitle(_ id: String) -> String {
+        for prefix in [efsPrefix, poolPrefix] where id.hasPrefix(prefix) {
+            return String(id.dropFirst(prefix.count))
+        }
+        return id
+    }
 }

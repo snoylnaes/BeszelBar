@@ -16,6 +16,22 @@ final class AppState {
     var isLoading = false
     var errorMessage: String?
     var isConfigured = false
+    var hiddenSystems: Set<String> = [] {
+        didSet { storage.saveHiddenSystems(hiddenSystems) }
+    }
+    var defaultCharts: [String] = ChartCatalog.defaultSelection {
+        didSet { storage.saveDefaultCharts(defaultCharts) }
+    }
+    var systemCharts: [String: [String]] = [:] {
+        didSet { storage.saveSystemCharts(systemCharts) }
+    }
+    var systemOrder: [String] = [] {
+        didSet { storage.saveSystemOrder(systemOrder) }
+    }
+
+    var visibleSystems: [SystemRecord] {
+        selectedInstanceSystems.filter { !hiddenSystems.contains($0.id) }
+    }
 
     private let storage = StorageManager()
     private let keychain = KeychainService.shared
@@ -28,6 +44,10 @@ final class AppState {
 
     private init() {
         loadInstances()
+        hiddenSystems = storage.loadHiddenSystems()
+        defaultCharts = storage.loadDefaultCharts() ?? ChartCatalog.defaultSelection
+        systemCharts = storage.loadSystemCharts()
+        systemOrder = storage.loadSystemOrder()
         isConfigured = !instances.isEmpty
         if selectedInstance != nil {
             loadSystems()
@@ -51,7 +71,7 @@ final class AppState {
                 let service = getOrCreateService(for: instance)
                 let systems = try await service.fetchSystems()
                 guard !Task.isCancelled else { return }
-                selectedInstanceSystems = systems.sorted { $0.name < $1.name }
+                selectedInstanceSystems = ordered(systems)
                 loadHistory()
             } catch is CancellationError {
                 return
@@ -65,7 +85,7 @@ final class AppState {
     func loadHistory() {
         guard let instance = selectedInstance else { return }
 
-        let ids = selectedInstanceSystems.map(\.id)
+        let ids = visibleSystems.map(\.id)
         historyTask?.cancel()
         historyTask = Task {
             let service = getOrCreateService(for: instance)
@@ -83,6 +103,38 @@ final class AppState {
             }
             guard !Task.isCancelled else { return }
             history.merge(fetched) { _, new in new }
+        }
+    }
+
+    func moveSystems(fromOffsets source: IndexSet, toOffset destination: Int) {
+        var ids = selectedInstanceSystems.map(\.id)
+        ids.move(fromOffsets: source, toOffset: destination)
+        systemOrder = ids + systemOrder.filter { !ids.contains($0) }
+        selectedInstanceSystems = ordered(selectedInstanceSystems)
+    }
+
+    private func ordered(_ systems: [SystemRecord]) -> [SystemRecord] {
+        let rank = Dictionary(systemOrder.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        return systems.sorted { lhs, rhs in
+            switch (rank[lhs.id], rank[rhs.id]) {
+            case let (left?, right?): return left < right
+            case (.some, nil): return true
+            case (nil, .some): return false
+            case (nil, nil): return lhs.name < rhs.name
+            }
+        }
+    }
+
+    func charts(for systemID: String) -> [String] {
+        systemCharts[systemID] ?? defaultCharts
+    }
+
+    func setHidden(_ hidden: Bool, systemID: String) {
+        if hidden {
+            hiddenSystems.insert(systemID)
+        } else {
+            hiddenSystems.remove(systemID)
+            loadHistory()
         }
     }
 
@@ -313,6 +365,43 @@ final class StorageManager {
             return []
         }
         return instances
+    }
+
+    private let hiddenSystemsKey = "com.nohitdev.BeszelBar.hiddenSystems"
+    private let defaultChartsKey = "com.nohitdev.BeszelBar.defaultCharts"
+    private let systemChartsKey = "com.nohitdev.BeszelBar.systemCharts"
+    private let systemOrderKey = "com.nohitdev.BeszelBar.systemOrder"
+
+    func saveSystemOrder(_ ids: [String]) {
+        defaults.set(ids, forKey: systemOrderKey)
+    }
+
+    func loadSystemOrder() -> [String] {
+        defaults.stringArray(forKey: systemOrderKey) ?? []
+    }
+
+    func saveHiddenSystems(_ ids: Set<String>) {
+        defaults.set(Array(ids), forKey: hiddenSystemsKey)
+    }
+
+    func loadHiddenSystems() -> Set<String> {
+        Set(defaults.stringArray(forKey: hiddenSystemsKey) ?? [])
+    }
+
+    func saveDefaultCharts(_ ids: [String]) {
+        defaults.set(ids, forKey: defaultChartsKey)
+    }
+
+    func loadDefaultCharts() -> [String]? {
+        defaults.stringArray(forKey: defaultChartsKey)
+    }
+
+    func saveSystemCharts(_ charts: [String: [String]]) {
+        defaults.set(charts, forKey: systemChartsKey)
+    }
+
+    func loadSystemCharts() -> [String: [String]] {
+        defaults.dictionary(forKey: systemChartsKey) as? [String: [String]] ?? [:]
     }
 
     func saveSelectedInstanceID(_ id: UUID?) {
