@@ -10,7 +10,9 @@ struct SystemDetailView: View {
     var browserSymbol = "globe"
 
     private var cpuModel: String? {
-        details?.cpu ?? system.info?.m
+        (details?.cpu ?? system.info?.m)?
+            .replacingOccurrences(of: "(R)", with: "®", options: .caseInsensitive)
+            .replacingOccurrences(of: "(TM)", with: "™", options: .caseInsensitive)
     }
 
     private var cpuCores: Int? {
