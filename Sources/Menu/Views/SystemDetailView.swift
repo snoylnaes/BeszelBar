@@ -9,25 +9,29 @@ struct SystemDetailView: View {
     var openInBrowser: () -> Void = {}
     var browserSymbol = "globe"
 
+    private var live: SystemRecord {
+        AppState.shared.latest(system)
+    }
+
     private var cpuModel: String? {
-        (details?.cpu ?? system.info?.m)?
+        (details?.cpu ?? live.info?.m)?
             .replacingOccurrences(of: "(R)", with: "®", options: .caseInsensitive)
             .replacingOccurrences(of: "(TM)", with: "™", options: .caseInsensitive)
     }
 
     private var cpuCores: Int? {
-        details?.cores ?? system.info?.c
+        details?.cores ?? live.info?.c
     }
 
     private var hostname: String? {
-        details?.hostname ?? system.info?.h
+        details?.hostname ?? live.info?.h
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(hostname ?? system.name)
+                    Text(hostname ?? live.name)
                         .lineLimit(1)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.primary)
@@ -57,13 +61,13 @@ struct SystemDetailView: View {
                     .foregroundColor(.secondary)
                 }
 
-                if system.info?.dt != nil || system.info?.u != nil {
+                if live.info?.dt != nil || live.info?.u != nil {
                     HStack(spacing: 12) {
-                        if let temp = system.info?.dt {
+                        if let temp = live.info?.dt {
                             Label(String(format: "%.0f°C", temp), systemImage: "thermometer.medium")
                                 .foregroundColor(temp > 80 ? .red : (temp > 60 ? .orange : .secondary))
                         }
-                        if let uptime = system.info?.u {
+                        if let uptime = live.info?.u {
                             Label(formatUptime(uptime), systemImage: "clock")
                                 .foregroundColor(.secondary)
                         }
@@ -75,7 +79,7 @@ struct SystemDetailView: View {
             .zIndex(1)
 
             let history = AppState.shared.history[system.id] ?? []
-            let source = ChartSource(system: system, history: history, aliases: titles)
+            let source = ChartSource(system: live, history: history, aliases: titles)
             ForEach(charts, id: \.self) { chartID in
                 chart(chartID, history: history, title: source.title(for: chartID))
                     .chartCard()
@@ -93,7 +97,7 @@ struct SystemDetailView: View {
         case ChartCatalog.cpu:
             MetricChart(
                 label: title,
-                percent: latest?.cpu ?? system.cpuPercentage,
+                percent: latest?.cpu ?? live.cpuPercentage,
                 detail: nil,
                 color: ChartPalette.cpu,
                 samples: history.compactMap { point in
@@ -106,7 +110,7 @@ struct SystemDetailView: View {
         case ChartCatalog.memory:
             MetricChart(
                 label: title,
-                percent: latest?.mem ?? system.memoryPercentage,
+                percent: latest?.mem ?? live.memoryPercentage,
                 detail: usageDetail(used: latest?.memUsed, total: latest?.memTotal),
                 color: ChartPalette.memory,
                 samples: history.compactMap { point in
@@ -119,7 +123,7 @@ struct SystemDetailView: View {
         case ChartCatalog.disk:
             MetricChart(
                 label: title,
-                percent: latest?.disk ?? system.diskPercentage,
+                percent: latest?.disk ?? live.diskPercentage,
                 detail: usageDetail(used: latest?.diskUsed, total: latest?.diskTotal),
                 color: ChartPalette.disk,
                 samples: history.compactMap { point in

@@ -8,6 +8,10 @@ struct SystemMenuRowView: View {
     static let highlightCornerRadius: CGFloat = 5
     static let highlightOpacity = 0.08
 
+    private var live: SystemRecord {
+        AppState.shared.latest(system)
+    }
+
     var body: some View {
         row
             .menuRowHighlight(MenuHighlight.shared.highlightedID == system.id)
@@ -18,19 +22,19 @@ struct SystemMenuRowView: View {
             StatusDot(color: statusColor)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(system.name.isEmpty ? system.id : system.name)
+                Text(live.name.isEmpty ? system.id : live.name)
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
 
                 if showStatsInMenu, hasStats {
                     HStack(spacing: 4) {
-                        if let cpu = system.cpuPercentage {
+                        if let cpu = live.cpuPercentage {
                             StatPill(value: "\(Int(cpu))%", icon: "cpu")
                         }
-                        if let mem = system.memoryPercentage {
+                        if let mem = live.memoryPercentage {
                             StatPill(value: "\(Int(mem))%", icon: "memorychip")
                         }
-                        if let disk = system.diskPercentage {
+                        if let disk = live.diskPercentage {
                             StatPill(value: "\(Int(disk))%", icon: "internaldrive")
                         }
                     }
@@ -48,11 +52,11 @@ struct SystemMenuRowView: View {
     }
 
     private var hasStats: Bool {
-        system.cpuPercentage != nil || system.memoryPercentage != nil || system.diskPercentage != nil
+        live.cpuPercentage != nil || live.memoryPercentage != nil || live.diskPercentage != nil
     }
 
     private var statusColor: Color {
-        guard let status = system.status?.lowercased() else { return .gray }
+        guard let status = live.status?.lowercased() else { return .gray }
         switch status {
         case "up", "online": return AppColors.up
         case "down", "offline": return AppColors.down

@@ -3,29 +3,21 @@ import AppKit
 
 @Observable
 @MainActor
-final class MenuHighlight: NSObject, NSMenuDelegate {
+final class MenuHighlight {
     static let shared = MenuHighlight()
 
     /// The `representedObject` of the highlighted item, when it is a string.
     var highlightedID: String?
-
-    func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
-        highlightedID = item?.representedObject as? String
-    }
-
-    func menuDidClose(_ menu: NSMenu) {
-        highlightedID = nil
-    }
 }
 
 @MainActor
 enum MenuBuilder {
     private static let menuWidth: CGFloat = 320
 
-    static func build(appState: AppState) -> NSMenu {
-        let menu = NSMenu()
+    /// Replaces the items of `menu` with items built from the current state.
+    static func populate(_ menu: NSMenu, appState: AppState) {
+        menu.removeAllItems()
         menu.autoenablesItems = false
-        menu.delegate = MenuHighlight.shared
 
         let headerItem = NSMenuItem()
         let headerView = NSHostingView(rootView: MenuHeaderView(
@@ -42,9 +34,8 @@ enum MenuBuilder {
                     }
                 }
             },
-            refresh: { [weak menu] in
-                menu?.cancelTracking()
-                AppState.shared.loadSystems()
+            refresh: {
+                RefreshService.shared.refresh()
             },
             openSettings: { [weak menu] in
                 menu?.cancelTracking()
@@ -62,7 +53,7 @@ enum MenuBuilder {
 
         if appState.instances.isEmpty {
             menu.addItem(createInfoItem("No Hub Configured", subtext: "Open Settings to add a hub"))
-        } else if appState.isLoading {
+        } else if appState.selectedInstanceSystems.isEmpty && appState.isLoading {
             let item = NSMenuItem(title: "Loading...", action: nil, keyEquivalent: "")
             item.isEnabled = false
             menu.addItem(item)
@@ -71,17 +62,17 @@ enum MenuBuilder {
         } else if appState.visibleSystems.isEmpty {
             menu.addItem(createInfoItem("All Systems Hidden", subtext: "Choose systems to show in Settings"))
         } else {
-            let systems = appState.visibleSystems
-            for system in systems.prefix(15) {
+            for system in appState.menuSystems {
                 let item = createSystemItem(for: system, appState: appState)
                 menu.addItem(item)
             }
 
-            if systems.count > 15 {
-                let more = NSMenuItem(title: "+\(systems.count - 15) more systems", action: nil, keyEquivalent: "")
+            let overflow = appState.visibleSystems.count - AppState.menuSystemLimit
+            if overflow > 0 {
+                let more = NSMenuItem(title: "+\(overflow) more systems", action: nil, keyEquivalent: "")
                 more.isEnabled = false
                 more.attributedTitle = NSAttributedString(
-                    string: "+\(systems.count - 15) more systems",
+                    string: "+\(overflow) more systems",
                     attributes: [.foregroundColor: NSColor.secondaryLabelColor]
                 )
                 menu.addItem(more)
@@ -91,8 +82,6 @@ enum MenuBuilder {
         addShortcut("Settings...", action: #selector(MenuActions.openSettings), key: ",", to: menu)
         addShortcut("Refresh Now", action: #selector(MenuActions.refreshNow), key: "r", to: menu)
         addShortcut("Quit BeszelBar", action: #selector(MenuActions.quit), key: "q", to: menu)
-
-        return menu
     }
 
     /// Adds a hidden item so that its key equivalent works while the menu is open.

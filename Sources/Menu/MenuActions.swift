@@ -14,7 +14,7 @@ final class MenuActions: NSObject {
 
     @objc func refreshNow(_ sender: Any?) {
         Task { @MainActor in
-            AppState.shared.loadSystems()
+            RefreshService.shared.refresh()
         }
     }
 

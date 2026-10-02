@@ -715,7 +715,7 @@ struct EditHubSheet: View {
 }
 
 struct GeneralView: View {
-    @AppStorage("refreshInterval") private var refreshInterval = 30
+    @AppStorage(RefreshService.intervalKey) private var refreshInterval = RefreshService.defaultInterval
     @AppStorage("launchAtLogin") private var launchAtLogin = false
 
     var body: some View {

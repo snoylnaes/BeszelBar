@@ -2,22 +2,22 @@ import SwiftUI
 import AppKit
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var observationTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_: Notification) {
+        UserDefaults.standard.register(defaults: [RefreshService.intervalKey: RefreshService.defaultInterval])
+
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let button = item.button {
-            button.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: "BeszelBar")
-            button.image?.size = NSSize(width: 18, height: 18)
-        }
-
-        item.menu = MenuBuilder.build(appState: AppState.shared)
+        let menu = NSMenu()
+        menu.delegate = self
+        item.menu = menu
         self.statusItem = item
+        updateStatusButton()
 
-        AppState.shared.loadSystems()
-        RefreshService.shared.start()
+        RefreshService.shared.restartTimer()
+        RefreshService.shared.refresh()
         startObserving()
 
         NSApp.setActivationPolicy(.accessory)
@@ -28,47 +28,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observationTask?.cancel()
     }
 
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        MenuBuilder.populate(menu, appState: AppState.shared)
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        RefreshService.shared.menuWillOpen()
+    }
+
+    func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        MenuHighlight.shared.highlightedID = item?.representedObject as? String
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        MenuHighlight.shared.highlightedID = nil
+        RefreshService.shared.menuDidClose()
+    }
+
     private func startObserving() {
         observationTask = Task { @MainActor in
             while !Task.isCancelled {
                 await withCheckedContinuation { continuation in
                     withObservationTracking {
-                        _ = AppState.shared.instances
-                        _ = AppState.shared.selectedInstance
-                        _ = AppState.shared.selectedInstanceSystems
-                        _ = AppState.shared.isLoading
                         _ = AppState.shared.activeAlerts
-                        _ = AppState.shared.systemDetails
-                        _ = AppState.shared.containers
-                        _ = AppState.shared.hiddenSystems
-                        _ = AppState.shared.defaultCharts
-                        _ = AppState.shared.systemCharts
-                        _ = AppState.shared.systemOrder
-                        _ = AppState.shared.chartTitles
                     } onChange: {
                         continuation.resume()
                     }
                 }
-                refreshMenu()
+                updateStatusButton()
             }
         }
     }
 
-    private func refreshMenu() {
-        let appState = AppState.shared
-
-        if let button = statusItem?.button {
-            let alertCount = appState.activeAlerts.count
-            if alertCount > 0 {
-                button.image = NSImage(systemSymbolName: "server.rack.fill", accessibilityDescription: "BeszelBar")
-                button.title = " \(alertCount)"
-            } else {
-                button.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: "BeszelBar")
-                button.title = ""
-            }
-            button.image?.size = NSSize(width: 18, height: 18)
+    private func updateStatusButton() {
+        guard let button = statusItem?.button else { return }
+        let alertCount = AppState.shared.activeAlerts.count
+        if alertCount > 0 {
+            button.image = NSImage(systemSymbolName: "server.rack.fill", accessibilityDescription: "BeszelBar")
+            button.title = " \(alertCount)"
+        } else {
+            button.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: "BeszelBar")
+            button.title = ""
         }
-
-        statusItem?.menu = MenuBuilder.build(appState: appState)
+        button.image?.size = NSSize(width: 18, height: 18)
     }
 }

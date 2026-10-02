@@ -12,6 +12,8 @@ final class AppState {
     var systemDetails: [String: SystemDetailsRecord] = [:]
     var containers: [String: [ContainerRecord]] = [:]
     var history: [String: [StatPoint]] = [:]
+    /// When `history` last loaded, or nil when it has not loaded for this hub.
+    var historyLoadedAt: Date?
     var activeAlerts: [AlertRecord] = []
     var isLoading = false
     var errorMessage: String?
@@ -36,14 +38,19 @@ final class AppState {
         selectedInstanceSystems.filter { !hiddenSystems.contains($0.id) }
     }
 
+    static let menuSystemLimit = 15
+
+    /// The visible systems that the menu has room to show.
+    var menuSystems: [SystemRecord] {
+        Array(visibleSystems.prefix(Self.menuSystemLimit))
+    }
+
     private let storage = StorageManager()
     private let keychain = KeychainService.shared
     private var apiServices: [UUID: BeszelAPIService] = [:]
-    private var loadTask: Task<Void, Never>?
     private var detailsTask: Task<Void, Never>?
     private var alertTask: Task<Void, Never>?
     private var containerTask: Task<Void, Never>?
-    private var historyTask: Task<Void, Never>?
 
     private init() {
         loadInstances()
@@ -54,60 +61,50 @@ final class AppState {
         chartTitles = storage.loadChartTitles()
         isConfigured = !instances.isEmpty
         if selectedInstance != nil {
-            loadSystems()
             loadSystemDetails()
-            loadAlerts()
-            loadContainers()
         }
     }
 
-    func loadSystems() {
+    func loadSystems() async {
         guard let instance = selectedInstance else { return }
 
-        loadTask?.cancel()
-        loadTask = Task {
-            isLoading = true
-            errorMessage = nil
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
 
-            defer { isLoading = false }
-
-            do {
-                let service = getOrCreateService(for: instance)
-                let systems = try await service.fetchSystems()
-                guard !Task.isCancelled else { return }
-                selectedInstanceSystems = ordered(systems)
-                loadHistory()
-            } catch is CancellationError {
-                return
-            } catch {
-                guard !Task.isCancelled else { return }
-                errorMessage = error.localizedDescription
-            }
+        do {
+            let systems = try await getOrCreateService(for: instance).fetchSystems()
+            guard selectedInstance?.id == instance.id else { return }
+            selectedInstanceSystems = ordered(systems)
+        } catch {
+            guard selectedInstance?.id == instance.id else { return }
+            errorMessage = error.localizedDescription
         }
     }
 
-    func loadHistory() {
-        guard let instance = selectedInstance else { return }
+    /// Loads the history of each system in the menu. Returns false when no history loaded.
+    @discardableResult
+    func loadHistory() async -> Bool {
+        guard let instance = selectedInstance else { return false }
 
-        let ids = visibleSystems.map(\.id)
-        historyTask?.cancel()
-        historyTask = Task {
-            let service = getOrCreateService(for: instance)
-            var fetched: [String: [StatPoint]] = [:]
-            await withTaskGroup(of: (String, [StatPoint]).self) { group in
-                for id in ids {
-                    group.addTask {
-                        let records = (try? await service.fetchSystemStats(systemID: id, limit: 60)) ?? []
-                        return (id, records.compactMap(\.point).sorted { $0.date < $1.date })
-                    }
-                }
-                for await (id, points) in group where !points.isEmpty {
-                    fetched[id] = points
+        let ids = menuSystems.map(\.id)
+        let service = getOrCreateService(for: instance)
+        var fetched: [String: [StatPoint]] = [:]
+        await withTaskGroup(of: (String, [StatPoint]).self) { group in
+            for id in ids {
+                group.addTask {
+                    let records = (try? await service.fetchSystemStats(systemID: id, limit: 60)) ?? []
+                    return (id, records.compactMap(\.point).sorted { $0.date < $1.date })
                 }
             }
-            guard !Task.isCancelled else { return }
-            history.merge(fetched) { _, new in new }
+            for await (id, points) in group where !points.isEmpty {
+                fetched[id] = points
+            }
         }
+        guard selectedInstance?.id == instance.id, !fetched.isEmpty else { return false }
+        history.merge(fetched) { _, new in new }
+        historyLoadedAt = .now
+        return true
     }
 
     func moveSystems(fromOffsets source: IndexSet, toOffset destination: Int) {
@@ -138,6 +135,11 @@ final class AppState {
         chartTitles[systemID] = updated
     }
 
+    /// The most recently fetched copy of `system`. Menu views use it so that a refresh updates the open menu.
+    func latest(_ system: SystemRecord) -> SystemRecord {
+        selectedInstanceSystems.first { $0.id == system.id } ?? system
+    }
+
     func charts(for systemID: String) -> [String] {
         systemCharts[systemID] ?? defaultCharts
     }
@@ -147,7 +149,7 @@ final class AppState {
             hiddenSystems.insert(systemID)
         } else {
             hiddenSystems.remove(systemID)
-            loadHistory()
+            Task { await loadHistory() }
         }
     }
 
@@ -195,11 +197,17 @@ final class AppState {
     func loadContainers() {
         guard let instance = selectedInstance else { return }
 
+        let ids = menuSystems.map(\.id)
         containerTask?.cancel()
+        guard !ids.isEmpty else {
+            containers = [:]
+            return
+        }
+        let filter = ids.map { "system = '\($0)'" }.joined(separator: " || ")
         containerTask = Task {
             do {
                 let service = getOrCreateService(for: instance)
-                let allContainers = try await service.fetchContainers()
+                let allContainers = try await service.fetchContainers(filter: filter)
                 guard !Task.isCancelled else { return }
 
                 var grouped: [String: [ContainerRecord]] = [:]
@@ -221,12 +229,12 @@ final class AppState {
         systemDetails = [:]
         containers = [:]
         history = [:]
+        historyLoadedAt = nil
         activeAlerts = []
-        loadSystems()
-        loadSystemDetails()
-        loadAlerts()
-        loadContainers()
+        containerTask?.cancel()
         storage.saveSelectedInstanceID(instance?.id)
+        loadSystemDetails()
+        RefreshService.shared.refresh()
     }
 
     func addInstance(_ instance: Instance) {
@@ -250,17 +258,7 @@ final class AppState {
         saveInstances()
 
         if selectedInstance?.id == instance.id {
-            selectedInstance = instances.first
-            selectedInstanceSystems = []
-            systemDetails = [:]
-            containers = [:]
-            activeAlerts = []
-            if selectedInstance != nil {
-                loadSystems()
-                loadSystemDetails()
-                loadAlerts()
-                loadContainers()
-            }
+            selectInstance(instances.first)
         }
         isConfigured = !instances.isEmpty
     }
