@@ -1,66 +1,45 @@
 # BeszelBar
 
-**Your Beszel servers at a glance from the menu bar.**
+So here's the deal, I wanted Beszel but smaller and the original BeszelBar Loriage/BeszelBar(https://github.com/Loriage/BeszelBar) did all the hard part.
 
-BeszelBar keeps your [Beszel](https://github.com/henrygd/beszel) infrastructure in view without opening a browser. Connect to your hubs and get a clear, glanceable dashboard for system health, resource usage, containers, and alerts right from the macOS menu bar.
+I took away much of the live view in lieu of proper charts.
 
-## Installation
+# Screenshot
 
-### Homebrew
+<img width="1384" height="1984" alt="image" src="https://github.com/user-attachments/assets/d487ac7f-808f-4bb8-bc6a-d5a4ba6a0491" />
 
-```bash
-brew install --cask loriage/tap/beszelbar
-```
+# Additions
 
-### Download
+- Little tiny baby Beszel charts in the correct Beszel colors on Beszel-style cards (with hover!)
+- Settings to add/remove specific charts per system (CPU, storage, networking are currently available)
+- Chart renaming
+- System reordering
+- System hiding
 
-Download the latest release from the [Releases](https://github.com/Loriage/BeszelBar/releases) page.
+# Subtractions
 
-The app is signed and notarized by Apple, so macOS should recognize it as a trusted build when you install it.
+- Usage bar was replaced by the charts
+- Percentage was replaced by the charts
+- Copy host button is gone
 
-### Build from source
+# Other changes
 
-```bash
-# Requires Xcode 15+ and xcodegen
-brew install xcodegen
-git clone https://github.com/Loriage/BeszelBar.git
-cd BeszelBar
-./build.sh
-open build/Release/BeszelBar.app
-```
+- Color palette changes and additions
+- Docker view is completely in the submenu now
+- Most menu items/buttons have been replaced with icons in headers
+- Replaced "BeszelBar" in the header (sorry) with currently selected hub, status icons go below that
+- Refresh logic was dialed in slightly differently (should be imperceptible)
 
-## Screenshot
+# Todo
 
-<img src="screenshot.png" width="50%" alt="BeszelBar Screenshot">
-
-## Features
-
-- **Live system cards** — See all your servers with status indicators, CPU, memory, and disk at a glance
-- **Rich system details** — Hover for detailed metrics including temperature, uptime, and usage bars
-- **Container monitoring** — View Docker containers with health status, resource usage, and image info
-- **Alert notifications** — Active alerts displayed prominently with triggering conditions
-- **Multi-hub support** — Connect multiple Beszel instances and switch between them instantly
-- **Native performance** — Built with SwiftUI and AppKit for minimal resource usage
-- **Secure authentication** — Credentials stored safely in macOS Keychain
-- **Auto-refresh** — Configurable polling interval from 10 seconds to 5 minutes
-
-## Setup
-
-1. Launch BeszelBar
-2. Click the menu bar icon and open **Settings**
-3. Add your Beszel hub URL, email, and password
-4. Your servers will appear in the menu bar dropdown
-
-BeszelBar supports both password and JWT token authentication. Tokens are automatically refreshed when needed.
-
-## Requirements
-
-- macOS 14.0 (Sonoma) or later
-- A running [Beszel](https://github.com/henrygd/beszel) hub instance
+- Instead of one menubar icon for the hub, I want an option for one menubar icon per system that goes straight to the main system view. 
+- Add support for the rest of the chart types
+- Remove the "now" values, Beszel is charts, I can look at the charts
+- Change time frames for charts
 
 ## Acknowledgements
 
-A huge thank you to [henrygd](https://github.com/henrygd) for creating Beszel, a fantastic, lightweight, and open-source monitoring tool. This mobile client would not exist without his remarkable work.
+Loriage(https://github.com/Loriage) made BeszelBar. 
 
 ## License
 
