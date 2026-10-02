@@ -4,7 +4,27 @@ struct SystemMenuRowView: View {
     let system: SystemRecord
     @AppStorage("showStatsInMenu") private var showStatsInMenu = true
 
+    private static let highlightInset: CGFloat = 5
+    private static let highlightCornerRadius: CGFloat = 5
+    private static let highlightOpacity = 0.08
+
+    private var isHighlighted: Bool {
+        MenuHighlight.shared.systemID == system.id
+    }
+
     var body: some View {
+        row
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background {
+                if isHighlighted {
+                    RoundedRectangle(cornerRadius: Self.highlightCornerRadius, style: .continuous)
+                        .fill(Color.primary.opacity(Self.highlightOpacity))
+                        .padding(.horizontal, Self.highlightInset)
+                }
+            }
+    }
+
+    private var row: some View {
         HStack(spacing: 8) {
             StatusDot(color: statusColor)
 

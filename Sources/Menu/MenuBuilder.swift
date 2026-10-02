@@ -1,6 +1,22 @@
 import SwiftUI
 import AppKit
 
+@Observable
+@MainActor
+final class MenuHighlight: NSObject, NSMenuDelegate {
+    static let shared = MenuHighlight()
+
+    var systemID: String?
+
+    func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        systemID = item?.representedObject as? String
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        systemID = nil
+    }
+}
+
 @MainActor
 enum MenuBuilder {
     private static let menuWidth: CGFloat = 320
@@ -8,6 +24,7 @@ enum MenuBuilder {
     static func build(appState: AppState) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
+        menu.delegate = MenuHighlight.shared
         let actions = MenuActions.shared
 
         let headerItem = NSMenuItem()
