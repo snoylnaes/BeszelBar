@@ -1,6 +1,6 @@
 # BeszelBar
 
-So here's the deal, I wanted Beszel but smaller and the original BeszelBar Loriage/BeszelBar(https://github.com/Loriage/BeszelBar) did all the hard part.
+So here's the deal, I wanted Beszel but smaller and the original [BeszelBar](https://github.com/Loriage/BeszelBar) did all the hard part.
 
 I took away much of the live view in lieu of proper charts.
 
@@ -39,7 +39,7 @@ I took away much of the live view in lieu of proper charts.
 
 ## Acknowledgements
 
-Loriage(https://github.com/Loriage) made BeszelBar. 
+[Loriage](https://github.com/Loriage) made BeszelBar. 
 
 ## License
 
