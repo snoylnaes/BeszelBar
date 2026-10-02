@@ -72,7 +72,7 @@ final class RefreshService {
         state.loadAlerts()
         Task {
             await state.loadSystems()
-            state.loadContainers()
+            await state.loadContainers()
             if isMenuOpen {
                 await state.loadHistory()
             }

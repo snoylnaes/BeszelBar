@@ -15,7 +15,8 @@ final class AppState {
     /// When `history` last loaded, or nil when it has not loaded for this hub.
     var historyLoadedAt: Date?
     var activeAlerts: [AlertRecord] = []
-    var isLoading = false
+    var isLoading: Bool { systemLoadsInProgress > 0 }
+    private var systemLoadsInProgress = 0
     var errorMessage: String?
     var isConfigured = false
     var hiddenSystems: Set<String> = [] {
@@ -50,7 +51,6 @@ final class AppState {
     private var apiServices: [UUID: BeszelAPIService] = [:]
     private var detailsTask: Task<Void, Never>?
     private var alertTask: Task<Void, Never>?
-    private var containerTask: Task<Void, Never>?
 
     private init() {
         loadInstances()
@@ -60,17 +60,15 @@ final class AppState {
         systemOrder = storage.loadSystemOrder()
         chartTitles = storage.loadChartTitles()
         isConfigured = !instances.isEmpty
-        if selectedInstance != nil {
-            loadSystemDetails()
-        }
+        loadSystemDetails()
     }
 
     func loadSystems() async {
         guard let instance = selectedInstance else { return }
 
-        isLoading = true
+        systemLoadsInProgress += 1
         errorMessage = nil
-        defer { isLoading = false }
+        defer { systemLoadsInProgress -= 1 }
 
         do {
             let systems = try await getOrCreateService(for: instance).fetchSystems()
@@ -82,10 +80,9 @@ final class AppState {
         }
     }
 
-    /// Loads the history of each system in the menu. Returns false when no history loaded.
-    @discardableResult
-    func loadHistory() async -> Bool {
-        guard let instance = selectedInstance else { return false }
+    /// Loads the history of each system in the menu.
+    func loadHistory() async {
+        guard let instance = selectedInstance else { return }
 
         let ids = menuSystems.map(\.id)
         let service = getOrCreateService(for: instance)
@@ -101,10 +98,9 @@ final class AppState {
                 fetched[id] = points
             }
         }
-        guard selectedInstance?.id == instance.id, !fetched.isEmpty else { return false }
+        guard selectedInstance?.id == instance.id, !fetched.isEmpty else { return }
         history.merge(fetched) { _, new in new }
         historyLoadedAt = .now
-        return true
     }
 
     func moveSystems(fromOffsets source: IndexSet, toOffset destination: Int) {
@@ -194,33 +190,18 @@ final class AppState {
         }
     }
 
-    func loadContainers() {
+    func loadContainers() async {
         guard let instance = selectedInstance else { return }
 
         let ids = menuSystems.map(\.id)
-        containerTask?.cancel()
         guard !ids.isEmpty else {
             containers = [:]
             return
         }
         let filter = ids.map { "system = '\($0)'" }.joined(separator: " || ")
-        containerTask = Task {
-            do {
-                let service = getOrCreateService(for: instance)
-                let allContainers = try await service.fetchContainers(filter: filter)
-                guard !Task.isCancelled else { return }
-
-                var grouped: [String: [ContainerRecord]] = [:]
-                for container in allContainers {
-                    grouped[container.system, default: []].append(container)
-                }
-                containers = grouped
-            } catch is CancellationError {
-                return
-            } catch {
-                guard !Task.isCancelled else { return }
-            }
-        }
+        guard let fetched = try? await getOrCreateService(for: instance).fetchContainers(filter: filter),
+              selectedInstance?.id == instance.id else { return }
+        containers = Dictionary(grouping: fetched, by: \.system)
     }
 
     func selectInstance(_ instance: Instance?) {
@@ -231,7 +212,6 @@ final class AppState {
         history = [:]
         historyLoadedAt = nil
         activeAlerts = []
-        containerTask?.cancel()
         storage.saveSelectedInstanceID(instance?.id)
         loadSystemDetails()
         RefreshService.shared.refresh()

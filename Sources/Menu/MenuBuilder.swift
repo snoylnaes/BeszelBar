@@ -97,33 +97,31 @@ enum MenuBuilder {
     private static let hubListTag = 1
 
     private static func hubListItems(appState: AppState, menu: NSMenu) -> [NSMenuItem] {
-        var rows: [(id: String, view: HubMenuRowView)] = appState.instances.map { instance in
-            let id = "hub:\(instance.id)"
-            let row = HubMenuRowView(
-                id: id,
-                title: instance.name.isEmpty ? instance.url : instance.name,
-                isSelected: instance.id == appState.selectedInstance?.id
-            ) { [weak menu] in
-                menu?.cancelTracking()
-                AppState.shared.selectInstance(instance)
-            }
-            return (id, row)
-        }
-        rows.append(("hub:manage", HubMenuRowView(id: "hub:manage", title: "Manage Hubs...", isSelected: false) { [weak menu] in
-            menu?.cancelTracking()
-            WindowManager.shared.showSettings(tab: .hubs)
-        }))
-
-        var items = rows.map { row in
+        func row(_ id: String, _ title: String, isSelected: Bool = false, action: @escaping () -> Void) -> NSMenuItem {
             let item = NSMenuItem()
-            item.representedObject = row.id
-            item.view = NSHostingView(rootView: row.view)
+            item.tag = hubListTag
+            item.representedObject = id
+            item.view = NSHostingView(rootView: HubMenuRowView(id: id, title: title, isSelected: isSelected) { [weak menu] in
+                menu?.cancelTracking()
+                action()
+            })
             item.view?.frame = NSRect(x: 0, y: 0, width: menuWidth, height: 26)
             return item
         }
-        items.append(NSMenuItem.separator())
 
-        for item in items { item.tag = hubListTag }
+        var items = appState.instances.map { instance in
+            row("hub:\(instance.id)", instance.name.isEmpty ? instance.url : instance.name,
+                isSelected: instance.id == appState.selectedInstance?.id) {
+                AppState.shared.selectInstance(instance)
+            }
+        }
+        items.append(row("hub:manage", "Manage Hubs...") {
+            WindowManager.shared.showSettings(tab: .hubs)
+        })
+
+        let separator = NSMenuItem.separator()
+        separator.tag = hubListTag
+        items.append(separator)
         return items
     }
 

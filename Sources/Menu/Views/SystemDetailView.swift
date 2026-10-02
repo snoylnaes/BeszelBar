@@ -181,22 +181,9 @@ struct SystemDetailView: View {
             return "\(hours)h \(mins)m"
         }
     }
-
-    private func formatBandwidth(_ mb: Double) -> String {
-        if mb >= 1024 {
-            return String(format: "%.1f GB/s", mb / 1024)
-        }
-        return String(format: "%.1f MB/s", mb)
-    }
-
 }
 
 enum AppColors {
-    static let green = Color.green
-    static let orange = Color.orange
-    static let red = Color.red
-    static let gray = Color.gray
-
     /// System status colours from Beszel (MIT License, Copyright (c) henrygd):
     /// green-500 from `internal/site/src/index.css`, and Tailwind's red-500 and yellow-500.
     static let up = Color(red: 0.24, green: 0.72, blue: 0.40)
@@ -204,9 +191,9 @@ enum AppColors {
     static let pending = Color(red: 0.937, green: 0.694, blue: 0)
 
     static func level(_ value: Double) -> Color {
-        if value >= 90 { return red }
-        if value >= 70 { return orange }
-        return green
+        if value >= 90 { return .red }
+        if value >= 70 { return .orange }
+        return .green
     }
 }
 
@@ -215,31 +202,18 @@ enum AppColors {
 enum ChartPalette {
     static let chart1 = hsl(220, 70, 50)
     static let chart2 = hsl(160, 60, 45)
-    static let chart3 = hsl(30, 80, 55)
     static let chart4 = hsl(280, 65, 60)
     static let chart5 = hsl(340, 75, 55)
-    static let loadAverage = [hsl(271, 81, 60), hsl(217, 91, 60), hsl(25, 95, 53)]
 
     static let cpu = chart1
     static let memory = chart2
     static let disk = chart4
-    static let diskRead = chart1
-    static let diskWrite = chart3
     static let sent = chart5
     static let received = chart2
 
     static let usageFill = 0.4
-    static let ioFill = 0.3
     static let networkFill = 0.2
     static let cacheStrength = 0.5
-
-    static func series(_ index: Int, of count: Int) -> Color {
-        let hue = Double(index) * 360 / Double(max(1, count))
-        return Color(nsColor: NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            return nsColor(hue, isDark ? 60 : 65, isDark ? 55 : 50)
-        })
-    }
 
     static func hsl(_ hue: Double, _ saturation: Double, _ lightness: Double) -> Color {
         Color(nsColor: nsColor(hue, saturation, lightness))
@@ -744,38 +718,5 @@ struct ChartReadout: View {
             RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                 .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
         )
-    }
-}
-
-struct MetricBar: View {
-    let label: String
-    let value: Double
-    let color: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text(label)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.secondary)
-                Spacer()
-                Text("\(Int(value))%")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.primary)
-            }
-
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.secondary.opacity(0.2))
-                        .frame(height: 6)
-
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(color)
-                        .frame(width: geometry.size.width * min(value / 100, 1.0), height: 6)
-                }
-            }
-            .frame(height: 6)
-        }
     }
 }
