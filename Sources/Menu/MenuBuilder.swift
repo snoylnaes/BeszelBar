@@ -8,6 +8,24 @@ final class MenuHighlight {
 
     /// The `representedObject` of the highlighted item, when it is a string.
     var highlightedID: String?
+
+    /// The `representedObject` of the highlighted item in a system submenu.
+    /// It is separate from `highlightedID` so that the system row stays highlighted while its submenu is open.
+    var submenuHighlightedID: String?
+}
+
+/// Menu delegate for the system submenus. It tracks `MenuHighlight.submenuHighlightedID`.
+@MainActor
+final class SubmenuHighlightDelegate: NSObject, NSMenuDelegate {
+    static let shared = SubmenuHighlightDelegate()
+
+    func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        MenuHighlight.shared.submenuHighlightedID = item?.representedObject as? String
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        MenuHighlight.shared.submenuHighlightedID = nil
+    }
 }
 
 @MainActor
@@ -202,6 +220,7 @@ enum MenuBuilder {
 
     private static func createSystemSubmenu(for system: SystemRecord, containers: [ContainerRecord], appState: AppState) -> NSMenu {
         let submenu = NSMenu()
+        submenu.delegate = SubmenuHighlightDelegate.shared
 
         let details = appState.systemDetails[system.id]
 
@@ -224,22 +243,21 @@ enum MenuBuilder {
         submenu.addItem(detailItem)
 
         if !containers.isEmpty {
-            submenu.addItem(NSMenuItem.separator())
-
             let sortedContainers = containers.sorted { $0.name.lowercased() < $1.name.lowercased() }
 
-            let containersItem = NSMenuItem(title: "Containers (\(containers.count))", action: nil, keyEquivalent: "")
-            containersItem.image = NSImage(systemSymbolName: "shippingbox.fill", accessibilityDescription: nil)
-            containersItem.image?.size = NSSize(width: 14, height: 14)
+            let containersID = "containers:\(system.id)"
+            let containersItem = NSMenuItem()
+            containersItem.representedObject = containersID
+            let rowView = NSHostingView(rootView: ContainersMenuRowView(id: containersID, containers: containers))
+            rowView.frame = NSRect(x: 0, y: 0, width: ChartLayout.panelWidth, height: 28)
+            containersItem.view = rowView
 
+            let listItem = NSMenuItem()
+            let listView = NSHostingView(rootView: ContainerListView(containers: sortedContainers))
+            listView.frame = NSRect(origin: .zero, size: listView.fittingSize)
+            listItem.view = listView
             let containersSubmenu = NSMenu()
-            for container in sortedContainers {
-                let containerItem = NSMenuItem()
-                let view = NSHostingView(rootView: ContainerMenuRowView(container: container))
-                view.frame = NSRect(x: 0, y: 0, width: 260, height: 50)
-                containerItem.view = view
-                containersSubmenu.addItem(containerItem)
-            }
+            containersSubmenu.addItem(listItem)
             containersItem.submenu = containersSubmenu
             submenu.addItem(containersItem)
         }

@@ -185,10 +185,11 @@ struct SystemDetailView: View {
 
 enum AppColors {
     /// System status colours from Beszel (MIT License, Copyright (c) henrygd):
-    /// green-500 from `internal/site/src/index.css`, and Tailwind's red-500 and yellow-500.
+    /// green-500 from `internal/site/src/index.css`, and Tailwind's red-500, yellow-500 and zinc-500.
     static let up = Color(red: 0.24, green: 0.72, blue: 0.40)
     static let down = Color(red: 0.984, green: 0.173, blue: 0.212)
     static let pending = Color(red: 0.937, green: 0.694, blue: 0)
+    static let inactive = Color(red: 0.443, green: 0.443, blue: 0.478)
 
     static func level(_ value: Double) -> Color {
         if value >= 90 { return .red }
@@ -251,11 +252,16 @@ enum UnitFormat {
             value /= step
             unit += 1
         }
+        return "\(number(value)) \(units[unit])"
+    }
+
+    /// One decimal below 10, with ".0" dropped, and whole numbers from 10.
+    static func number(_ value: Double) -> String {
         var number = String(format: value < decimalsBelow ? "%.1f" : "%.0f", value)
         if number.hasSuffix(".0") {
             number.removeLast(2)
         }
-        return "\(number) \(units[unit])"
+        return number
     }
 
     static func precise(_ value: Double, units: [String]) -> String {

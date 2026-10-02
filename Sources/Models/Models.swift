@@ -250,24 +250,6 @@ enum ContainerHealth: Int, Codable, Hashable {
     case starting = 1
     case healthy = 2
     case unhealthy = 3
-
-    var displayText: String {
-        switch self {
-        case .none: return "No Health Check"
-        case .starting: return "Starting"
-        case .healthy: return "Healthy"
-        case .unhealthy: return "Unhealthy"
-        }
-    }
-
-    var color: String {
-        switch self {
-        case .none: return "secondary"
-        case .starting: return "orange"
-        case .healthy: return "green"
-        case .unhealthy: return "red"
-        }
-    }
 }
 
 struct ContainerRecord: Identifiable, Codable, Hashable {

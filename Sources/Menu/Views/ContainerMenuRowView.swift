@@ -1,88 +1,111 @@
 import SwiftUI
 
-struct ContainerMenuRowView: View {
-    let container: ContainerRecord
+/// The row at the bottom of a system submenu that opens the container list.
+struct ContainersMenuRowView: View {
+    let id: String
+    let containers: [ContainerRecord]
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(container.name)
-                    .font(.system(size: 11, weight: .semibold))
-                    .lineLimit(1)
-
-                Spacer()
-
-                HealthBadge(health: container.health)
-            }
-
-            HStack(spacing: 8) {
-                Label(String(format: "%.1f%%", container.cpu), systemImage: "cpu")
-                    .font(.system(size: 9))
-                    .foregroundColor(.secondary)
-
-                Label(formatMemory(container.memory), systemImage: "memorychip")
-                    .font(.system(size: 9))
-                    .foregroundColor(.secondary)
-
-                Spacer()
-
-                Text(container.status)
-                    .font(.system(size: 9))
-                    .foregroundColor(.secondary)
-            }
-
-            if !container.image.isEmpty {
-                Label {
-                    Text(container.image)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                } icon: {
-                    Image(systemName: "shippingbox")
-                }
-                .font(.system(size: 9))
-                .foregroundColor(.secondary.opacity(0.8))
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+    private var unhealthyCount: Int {
+        containers.filter { $0.health == .unhealthy }.count
     }
 
-    private func formatMemory(_ mb: Double) -> String {
-        if mb >= 1024 {
-            return String(format: "%.1f GB", mb / 1024)
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "shippingbox")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            Text("Containers")
+                .font(.system(size: 12, weight: .medium))
+
+            Spacer()
+
+            if unhealthyCount > 0 {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(AppColors.down)
+                        .frame(width: 6, height: 6)
+                    Text("\(unhealthyCount) unhealthy")
+                }
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+            }
+
+            Text("\(containers.count)")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.secondary.opacity(0.12))
+                .clipShape(Capsule())
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary.opacity(0.4))
         }
-        return String(format: "%.0f MB", mb)
+        .padding(.horizontal, ChartLayout.panelPadding + ChartLayout.cardPadding)
+        .menuRowHighlight(MenuHighlight.shared.submenuHighlightedID == id, inset: ChartLayout.panelPadding)
     }
 }
 
-struct HealthBadge: View {
-    let health: ContainerHealth
-
-    var textColor: Color {
-        switch health {
-        case .none: return .gray
-        case .starting: return Color(red: 0.7, green: 0.4, blue: 0.0)
-        case .healthy: return Color(red: 0.1, green: 0.5, blue: 0.2)
-        case .unhealthy: return Color(red: 0.7, green: 0.1, blue: 0.1)
-        }
-    }
-
-    var bgColor: Color {
-        switch health {
-        case .none: return .gray
-        case .starting: return .orange
-        case .healthy: return .green
-        case .unhealthy: return .red
-        }
-    }
+/// The container list in the submenu of the containers row.
+struct ContainerListView: View {
+    let containers: [ContainerRecord]
 
     var body: some View {
-        Text(health.displayText)
-            .font(.system(size: 8, weight: .semibold))
-            .foregroundColor(textColor)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(bgColor.opacity(0.15))
-            .cornerRadius(4)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(containers.enumerated()), id: \.element.id) { index, container in
+                if index > 0 {
+                    Divider()
+                        .padding(.vertical, 6)
+                }
+                row(container)
+            }
+        }
+        .chartCard()
+        .padding(ChartLayout.panelPadding)
+        .frame(width: ChartLayout.panelWidth)
+    }
+
+    private func row(_ container: ContainerRecord) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(container.health.dotColor)
+                    .frame(width: 6, height: 6)
+                Text(container.name)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                Text("\(UnitFormat.number(container.cpu))%  ·  \(UnitFormat.compact(container.memory, units: ["MB", "GB", "TB"]))")
+                    .font(.system(size: 10))
+                    .monospacedDigit()
+                    .foregroundColor(.secondary)
+            }
+
+            HStack {
+                Text(container.image)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                Text(container.status)
+                    .lineLimit(1)
+            }
+            .font(.system(size: 9))
+            .foregroundColor(.secondary)
+            .padding(.leading, 12)
+        }
+    }
+}
+
+private extension ContainerHealth {
+    var dotColor: Color {
+        switch self {
+        case .none: return AppColors.inactive
+        case .starting: return AppColors.pending
+        case .healthy: return AppColors.up
+        case .unhealthy: return AppColors.down
+        }
     }
 }

@@ -68,13 +68,13 @@ struct SystemMenuRowView: View {
 
 extension View {
     /// Fills the row with the grey highlight that marks the selected menu row.
-    func menuRowHighlight(_ isHighlighted: Bool) -> some View {
+    func menuRowHighlight(_ isHighlighted: Bool, inset: CGFloat = SystemMenuRowView.highlightInset) -> some View {
         frame(maxWidth: .infinity, maxHeight: .infinity)
             .background {
                 if isHighlighted {
                     RoundedRectangle(cornerRadius: SystemMenuRowView.highlightCornerRadius, style: .continuous)
                         .fill(Color.primary.opacity(SystemMenuRowView.highlightOpacity))
-                        .padding(.horizontal, SystemMenuRowView.highlightInset)
+                        .padding(.horizontal, inset)
                 }
             }
     }
