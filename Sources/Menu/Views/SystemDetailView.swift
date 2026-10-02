@@ -316,7 +316,7 @@ enum ChartLayout {
     static let yLabelGap: CGFloat = 4
     static let cardPadding: CGFloat = 10
     static let cardCornerRadius: CGFloat = 10
-    static let chartHeight: CGFloat = 88
+    static let chartHeight: CGFloat = 80
     static let readoutGap: CGFloat = 8
     static let markerSize: CGFloat = 6
     static let contentWidth = panelWidth - 2 * panelPadding - 2 * cardPadding
