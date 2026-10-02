@@ -18,14 +18,6 @@ final class MenuActions: NSObject {
         }
     }
 
-    @objc func switchHub(_ sender: NSMenuItem) {
-        Task { @MainActor in
-            guard let instanceID = sender.representedObject as? UUID,
-                  let instance = AppState.shared.instances.first(where: { $0.id == instanceID }) else { return }
-            AppState.shared.selectInstance(instance)
-        }
-    }
-
     @objc func openSystemInBrowser(_ sender: NSMenuItem) {
         guard let systemID = sender.representedObject as? String else { return }
         Task { @MainActor in

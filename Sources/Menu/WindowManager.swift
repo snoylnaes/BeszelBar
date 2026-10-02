@@ -8,13 +8,16 @@ final class WindowManager {
 
     private init() {}
 
-    func showSettings() {
+    func showSettings(tab: SettingsTab? = nil) {
         if let existing = settingsWindow, existing.isVisible {
+            if let tab {
+                existing.contentView = NSHostingView(rootView: SettingsView(appState: AppState.shared, selectedTab: tab))
+            }
             existing.orderFrontRegardless()
             return
         }
 
-        let settingsView = SettingsView(appState: AppState.shared)
+        let settingsView = SettingsView(appState: AppState.shared, selectedTab: tab ?? .general)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 500, height: 540),

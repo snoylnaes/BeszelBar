@@ -6,14 +6,15 @@ import AppKit
 final class MenuHighlight: NSObject, NSMenuDelegate {
     static let shared = MenuHighlight()
 
-    var systemID: String?
+    /// The `representedObject` of the highlighted item, when it is a string.
+    var highlightedID: String?
 
     func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
-        systemID = item?.representedObject as? String
+        highlightedID = item?.representedObject as? String
     }
 
     func menuDidClose(_ menu: NSMenu) {
-        systemID = nil
+        highlightedID = nil
     }
 }
 
@@ -25,11 +26,32 @@ enum MenuBuilder {
         let menu = NSMenu()
         menu.autoenablesItems = false
         menu.delegate = MenuHighlight.shared
-        let actions = MenuActions.shared
 
         let headerItem = NSMenuItem()
-        let headerView = NSHostingView(rootView: MenuHeaderView(appState: appState))
-        headerView.frame = NSRect(x: 0, y: 0, width: menuWidth, height: 46)
+        let headerView = NSHostingView(rootView: MenuHeaderView(
+            appState: appState,
+            toggleHubList: { [weak menu] isOpen in
+                guard let menu else { return }
+                if isOpen {
+                    for (offset, item) in hubListItems(appState: appState, menu: menu).enumerated() {
+                        menu.insertItem(item, at: 1 + offset)
+                    }
+                } else {
+                    for item in menu.items where item.tag == hubListTag {
+                        menu.removeItem(item)
+                    }
+                }
+            },
+            refresh: { [weak menu] in
+                menu?.cancelTracking()
+                AppState.shared.loadSystems()
+            },
+            openSettings: { [weak menu] in
+                menu?.cancelTracking()
+                WindowManager.shared.showSettings()
+            }
+        ))
+        headerView.frame = NSRect(x: 0, y: 0, width: menuWidth, height: headerView.fittingSize.height)
         headerItem.view = headerView
         menu.addItem(headerItem)
 
@@ -66,69 +88,54 @@ enum MenuBuilder {
             }
         }
 
-        menu.addItem(NSMenuItem.separator())
-
-        if appState.instances.count > 1 {
-            menu.addItem(createHubSwitcherSubmenu(appState: appState))
-        }
-
-        let settingsItem = NSMenuItem(
-            title: "Settings...",
-            action: #selector(MenuActions.openSettings),
-            keyEquivalent: ","
-        )
-        settingsItem.target = actions
-        settingsItem.image = NSImage(systemSymbolName: "gear", accessibilityDescription: nil)
-        settingsItem.image?.size = NSSize(width: 14, height: 14)
-        menu.addItem(settingsItem)
-
-        let refreshItem = NSMenuItem(
-            title: "Refresh Now",
-            action: #selector(MenuActions.refreshNow),
-            keyEquivalent: "r"
-        )
-        refreshItem.target = actions
-        refreshItem.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
-        refreshItem.image?.size = NSSize(width: 14, height: 14)
-        menu.addItem(refreshItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        let quitItem = NSMenuItem(
-            title: "Quit BeszelBar",
-            action: #selector(MenuActions.quit),
-            keyEquivalent: "q"
-        )
-        quitItem.target = MenuActions.shared
-        menu.addItem(quitItem)
+        addShortcut("Settings...", action: #selector(MenuActions.openSettings), key: ",", to: menu)
+        addShortcut("Refresh Now", action: #selector(MenuActions.refreshNow), key: "r", to: menu)
+        addShortcut("Quit BeszelBar", action: #selector(MenuActions.quit), key: "q", to: menu)
 
         return menu
     }
 
-    private static func createHubSwitcherSubmenu(appState: AppState) -> NSMenuItem {
-        let item = NSMenuItem(title: "Switch Hub", action: nil, keyEquivalent: "")
-        item.image = NSImage(systemSymbolName: "arrow.left.arrow.right", accessibilityDescription: nil)
-        item.image?.size = NSSize(width: 14, height: 14)
+    /// Adds a hidden item so that its key equivalent works while the menu is open.
+    private static func addShortcut(_ title: String, action: Selector, key: String, to menu: NSMenu) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = MenuActions.shared
+        item.isHidden = true
+        item.allowsKeyEquivalentWhenHidden = true
+        menu.addItem(item)
+    }
 
-        let submenu = NSMenu()
-        for instance in appState.instances {
-            let hubItem = NSMenuItem(
+    /// Tag of the hub list items that the header inserts under itself.
+    private static let hubListTag = 1
+
+    private static func hubListItems(appState: AppState, menu: NSMenu) -> [NSMenuItem] {
+        var rows: [(id: String, view: HubMenuRowView)] = appState.instances.map { instance in
+            let id = "hub:\(instance.id)"
+            let row = HubMenuRowView(
+                id: id,
                 title: instance.name.isEmpty ? instance.url : instance.name,
-                action: #selector(MenuActions.switchHub(_:)),
-                keyEquivalent: ""
-            )
-            hubItem.target = MenuActions.shared
-            hubItem.representedObject = instance.id
-
-            if instance.id == appState.selectedInstance?.id {
-                hubItem.state = .on
+                isSelected: instance.id == appState.selectedInstance?.id
+            ) { [weak menu] in
+                menu?.cancelTracking()
+                AppState.shared.selectInstance(instance)
             }
-
-            submenu.addItem(hubItem)
+            return (id, row)
         }
+        rows.append(("hub:manage", HubMenuRowView(id: "hub:manage", title: "Manage Hubs...", isSelected: false) { [weak menu] in
+            menu?.cancelTracking()
+            WindowManager.shared.showSettings(tab: .hubs)
+        }))
 
-        item.submenu = submenu
-        return item
+        var items = rows.map { row in
+            let item = NSMenuItem()
+            item.representedObject = row.id
+            item.view = NSHostingView(rootView: row.view)
+            item.view?.frame = NSRect(x: 0, y: 0, width: menuWidth, height: 26)
+            return item
+        }
+        items.append(NSMenuItem.separator())
+
+        for item in items { item.tag = hubListTag }
+        return items
     }
 
     private static func createAlertsSubmenu(alerts: [AlertRecord], systems: [SystemRecord]) -> NSMenuItem {

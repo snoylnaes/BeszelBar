@@ -3,7 +3,7 @@ import ServiceManagement
 
 struct SettingsView: View {
     var appState: AppState
-    @State private var selectedTab: SettingsTab = .general
+    @State var selectedTab: SettingsTab = .general
 
     var body: some View {
         VStack(spacing: 0) {

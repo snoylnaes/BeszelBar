@@ -4,24 +4,13 @@ struct SystemMenuRowView: View {
     let system: SystemRecord
     @AppStorage("showStatsInMenu") private var showStatsInMenu = true
 
-    private static let highlightInset: CGFloat = 5
+    static let highlightInset: CGFloat = 5
     static let highlightCornerRadius: CGFloat = 5
     static let highlightOpacity = 0.08
 
-    private var isHighlighted: Bool {
-        MenuHighlight.shared.systemID == system.id
-    }
-
     var body: some View {
         row
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background {
-                if isHighlighted {
-                    RoundedRectangle(cornerRadius: Self.highlightCornerRadius, style: .continuous)
-                        .fill(Color.primary.opacity(Self.highlightOpacity))
-                        .padding(.horizontal, Self.highlightInset)
-                }
-            }
+            .menuRowHighlight(MenuHighlight.shared.highlightedID == system.id)
     }
 
     private var row: some View {
@@ -70,6 +59,20 @@ struct SystemMenuRowView: View {
         case "pending": return AppColors.pending
         default: return .gray
         }
+    }
+}
+
+extension View {
+    /// Fills the row with the grey highlight that marks the selected menu row.
+    func menuRowHighlight(_ isHighlighted: Bool) -> some View {
+        frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background {
+                if isHighlighted {
+                    RoundedRectangle(cornerRadius: SystemMenuRowView.highlightCornerRadius, style: .continuous)
+                        .fill(Color.primary.opacity(SystemMenuRowView.highlightOpacity))
+                        .padding(.horizontal, SystemMenuRowView.highlightInset)
+                }
+            }
     }
 }
 

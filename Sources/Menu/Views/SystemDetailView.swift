@@ -357,6 +357,8 @@ extension View {
 struct PanelIconButton: View {
     let systemName: String
     let help: String
+    /// Shows the tooltip to the left of the icon instead of below it, for rows too short to hold it below.
+    var tooltipBeside = false
     let action: () -> Void
 
     @State private var isHovered = false
@@ -377,7 +379,7 @@ struct PanelIconButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .topTrailing) {
+        .overlay(alignment: tooltipBeside ? .trailing : .topTrailing) {
             if showsTooltip {
                 Text(help)
                     .font(.system(size: 10))
@@ -389,7 +391,7 @@ struct PanelIconButton: View {
                             .fill(Color(nsColor: .windowBackgroundColor))
                             .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
                     )
-                    .offset(y: 24)
+                    .offset(x: tooltipBeside ? -24 : 0, y: tooltipBeside ? 0 : 24)
                     .allowsHitTesting(false)
             }
         }
