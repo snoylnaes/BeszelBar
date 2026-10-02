@@ -24,9 +24,9 @@ struct MenuHeaderView: View {
                     let offline = appState.selectedInstanceSystems.count - online
 
                     HStack(spacing: 6) {
-                        StatusBubble(count: online, color: .green, icon: "checkmark.circle.fill")
+                        StatusBubble(count: online, color: AppColors.up, icon: "checkmark.circle.fill")
                         if offline > 0 {
-                            StatusBubble(count: offline, color: .red, icon: "xmark.circle.fill")
+                            StatusBubble(count: offline, color: AppColors.down, icon: "xmark.circle.fill")
                         }
                     }
                 }

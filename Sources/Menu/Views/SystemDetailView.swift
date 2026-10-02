@@ -193,6 +193,12 @@ enum AppColors {
     static let red = Color.red
     static let gray = Color.gray
 
+    /// System status colours from Beszel (MIT License, Copyright (c) henrygd):
+    /// green-500 from `internal/site/src/index.css`, and Tailwind's red-500 and yellow-500.
+    static let up = Color(red: 0.24, green: 0.72, blue: 0.40)
+    static let down = Color(red: 0.984, green: 0.173, blue: 0.212)
+    static let pending = Color(red: 0.937, green: 0.694, blue: 0)
+
     static func level(_ value: Double) -> Color {
         if value >= 90 { return red }
         if value >= 70 { return orange }

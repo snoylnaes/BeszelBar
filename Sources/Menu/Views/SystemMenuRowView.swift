@@ -65,9 +65,9 @@ struct SystemMenuRowView: View {
     private var statusColor: Color {
         guard let status = system.status?.lowercased() else { return .gray }
         switch status {
-        case "up", "online": return .green
-        case "down", "offline": return .red
-        case "pending": return .orange
+        case "up", "online": return AppColors.up
+        case "down", "offline": return AppColors.down
+        case "pending": return AppColors.pending
         default: return .gray
         }
     }
