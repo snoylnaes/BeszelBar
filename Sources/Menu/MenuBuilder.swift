@@ -34,7 +34,8 @@ enum MenuBuilder {
                     }
                 }
             },
-            refresh: {
+            refresh: { [weak menu] in
+                menu?.cancelTracking()
                 RefreshService.shared.refresh()
             },
             openSettings: { [weak menu] in
