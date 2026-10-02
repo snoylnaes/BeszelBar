@@ -199,13 +199,31 @@ enum MenuBuilder {
         return item
     }
 
+    private static var defaultBrowserIsSafari: Bool {
+        guard let probe = URL(string: "https://example.com"),
+              let browser = NSWorkspace.shared.urlForApplication(toOpen: probe) else { return false }
+        return Bundle(url: browser)?.bundleIdentifier == "com.apple.Safari"
+    }
+
     private static func createSystemSubmenu(for system: SystemRecord, containers: [ContainerRecord], appState: AppState) -> NSMenu {
         let submenu = NSMenu()
 
         let details = appState.systemDetails[system.id]
 
         let detailItem = NSMenuItem()
-        let detailView = NSHostingView(rootView: SystemDetailView(system: system, details: details, charts: appState.charts(for: system.id), titles: appState.chartTitles[system.id] ?? [:]))
+        let detailView = NSHostingView(rootView: SystemDetailView(
+            system: system,
+            details: details,
+            charts: appState.charts(for: system.id),
+            titles: appState.chartTitles[system.id] ?? [:],
+            openInBrowser: { [weak detailItem] in
+                MenuActions.openSystem(system.id)
+                var menu = detailItem?.menu
+                while let parent = menu?.supermenu { menu = parent }
+                menu?.cancelTracking()
+            },
+            browserSymbol: defaultBrowserIsSafari ? "safari" : "globe"
+        ))
         detailView.frame = NSRect(origin: .zero, size: detailView.fittingSize)
         detailItem.view = detailView
         submenu.addItem(detailItem)
@@ -229,33 +247,6 @@ enum MenuBuilder {
             }
             containersItem.submenu = containersSubmenu
             submenu.addItem(containersItem)
-        }
-
-        submenu.addItem(NSMenuItem.separator())
-
-        let openItem = NSMenuItem(
-            title: "Open in Browser",
-            action: #selector(MenuActions.openSystemInBrowser(_:)),
-            keyEquivalent: ""
-        )
-        openItem.target = MenuActions.shared
-        openItem.representedObject = system.id
-        openItem.image = NSImage(systemSymbolName: "safari", accessibilityDescription: nil)
-        openItem.image?.size = NSSize(width: 14, height: 14)
-        submenu.addItem(openItem)
-
-        let hostname = details?.hostname ?? system.info?.h
-        if let hostname = hostname {
-            let copyItem = NSMenuItem(
-                title: "Copy Hostname",
-                action: #selector(MenuActions.copyToClipboard(_:)),
-                keyEquivalent: ""
-            )
-            copyItem.target = MenuActions.shared
-            copyItem.representedObject = hostname
-            copyItem.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
-            copyItem.image?.size = NSSize(width: 14, height: 14)
-            submenu.addItem(copyItem)
         }
 
         return submenu

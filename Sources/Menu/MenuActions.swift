@@ -27,15 +27,17 @@ final class MenuActions: NSObject {
     }
 
     @objc func openSystemInBrowser(_ sender: NSMenuItem) {
+        guard let systemID = sender.representedObject as? String else { return }
         Task { @MainActor in
-            guard let systemID = sender.representedObject as? String,
-                  let instance = AppState.shared.selectedInstance else { return }
-
-            let urlString = "\(instance.url)/#/systems/\(systemID)"
-            if let url = URL(string: urlString) {
-                NSWorkspace.shared.open(url)
-            }
+            Self.openSystem(systemID)
         }
+    }
+
+    @MainActor
+    static func openSystem(_ systemID: String) {
+        guard let instance = AppState.shared.selectedInstance,
+              let url = URL(string: "\(instance.url)/system/\(systemID)") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     @objc func systemClicked(_ sender: NSMenuItem) {
@@ -46,12 +48,6 @@ final class MenuActions: NSObject {
                 NSPasteboard.general.setString(url, forType: .string)
             }
         }
-    }
-
-    @objc func copyToClipboard(_ sender: NSMenuItem) {
-        guard let text = sender.representedObject as? String else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 
     @objc func quit(_ sender: Any?) {

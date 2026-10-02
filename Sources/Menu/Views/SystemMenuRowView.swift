@@ -5,8 +5,8 @@ struct SystemMenuRowView: View {
     @AppStorage("showStatsInMenu") private var showStatsInMenu = true
 
     private static let highlightInset: CGFloat = 5
-    private static let highlightCornerRadius: CGFloat = 5
-    private static let highlightOpacity = 0.08
+    static let highlightCornerRadius: CGFloat = 5
+    static let highlightOpacity = 0.08
 
     private var isHighlighted: Bool {
         MenuHighlight.shared.systemID == system.id

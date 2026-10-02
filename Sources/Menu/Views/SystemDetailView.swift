@@ -6,6 +6,8 @@ struct SystemDetailView: View {
     var details: SystemDetailsRecord? = nil
     var charts: [String] = ChartCatalog.defaultSelection
     var titles: [String: String] = [:]
+    var openInBrowser: () -> Void = {}
+    var browserSymbol = "globe"
 
     private var cpuModel: String? {
         details?.cpu ?? system.info?.m
@@ -23,18 +25,16 @@ struct SystemDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    let displayName = hostname ?? system.name
-                    Label {
-                        Text(displayName)
-                            .lineLimit(1)
-                    } icon: {
-                        Image(systemName: "desktopcomputer")
-                    }
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.primary)
+                    Text(hostname ?? system.name)
+                        .lineLimit(1)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.primary)
 
                     Spacer()
+
+                    PanelIconButton(systemName: browserSymbol, help: "Open in Browser", action: openInBrowser)
                 }
+                .zIndex(1)
 
                 if cpuModel != nil || cpuCores != nil {
                     HStack(spacing: 4) {
@@ -70,6 +70,7 @@ struct SystemDetailView: View {
                 }
             }
             .chartCard()
+            .zIndex(1)
 
             let history = AppState.shared.history[system.id] ?? []
             let source = ChartSource(system: system, history: history, aliases: titles)
@@ -341,6 +342,56 @@ extension View {
                 RoundedRectangle(cornerRadius: ChartLayout.cardCornerRadius, style: .continuous)
                     .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
             )
+    }
+}
+
+/// Icon button for the hover panel. AppKit does not show tooltips while a menu is open, so the button draws its own.
+struct PanelIconButton: View {
+    let systemName: String
+    let help: String
+    let action: () -> Void
+
+    @State private var isHovered = false
+    @State private var showsTooltip = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .frame(width: 20, height: 20)
+                .background {
+                    if isHovered {
+                        RoundedRectangle(cornerRadius: SystemMenuRowView.highlightCornerRadius, style: .continuous)
+                            .fill(Color.primary.opacity(SystemMenuRowView.highlightOpacity))
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .overlay(alignment: .topTrailing) {
+            if showsTooltip {
+                Text(help)
+                    .font(.system(size: 10))
+                    .fixedSize()
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color(nsColor: .windowBackgroundColor))
+                            .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+                    )
+                    .offset(y: 24)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onHover { isHovered = $0 }
+        .task(id: isHovered) {
+            showsTooltip = false
+            guard isHovered else { return }
+            try? await Task.sleep(for: .milliseconds(600))
+            if !Task.isCancelled { showsTooltip = true }
+        }
     }
 }
 
