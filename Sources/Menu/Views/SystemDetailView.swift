@@ -641,39 +641,42 @@ struct ChartReadout: View {
     let date: Date
     let items: [ReadoutItem]
 
+    private static let fontSize: CGFloat = 9
+    private static let cornerRadius: CGFloat = 6
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(date, format: .dateTime.hour().minute())
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: Self.fontSize, weight: .medium))
                 .foregroundColor(.primary)
-            Grid(alignment: .leading, horizontalSpacing: 5, verticalSpacing: 3) {
+            Grid(alignment: .leading, horizontalSpacing: 4, verticalSpacing: 1) {
                 ForEach(items) { item in
                     GridRow {
                         RoundedRectangle(cornerRadius: 1)
                             .fill(item.color)
-                            .frame(width: 3, height: 10)
+                            .frame(width: 3, height: 8)
                         Text(item.name)
                             .foregroundColor(.secondary)
                         Text(item.value)
                             .fontWeight(.semibold)
                             .foregroundColor(.primary)
                             .gridColumnAlignment(.trailing)
-                            .padding(.leading, 4)
+                            .padding(.leading, 2)
                     }
                 }
             }
-            .font(.system(size: 10).monospacedDigit())
+            .font(.system(size: Self.fontSize).monospacedDigit())
         }
         .fixedSize()
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor))
-                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                .shadow(color: .black.opacity(0.12), radius: 4, y: 1)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                 .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
         )
     }
